@@ -1,0 +1,83 @@
+<html>
+
+<head></head>
+
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.2/rollups/aes.js"
+        integrity="sha256-/H4YS+7aYb9kJ5OKhFYPUjSJdrtV6AeyJOtTkw6X72o=" crossorigin="anonymous"></script>
+    <script type="module">
+        import { MlKem1024 } from "https://esm.sh/mlkem";
+
+        globalThis.doMlKem = async () => {
+            try {
+                const recipient = new MlKem1024();
+                // const [pkR, skR] = await recipient.generateKeyPair();
+                const encoder = new TextEncoder();
+                const uint8Array = encoder.encode('Hello world Hello world Hello world Hello world Hello world 1234');
+                const seed = uint8Array;
+                console.log(seed)
+                globalThis.crypto.getRandomValues(seed); // node >= 19
+                const [pkR, skR] = await recipient.deriveKeyPair(seed);
+
+                const sender = new MlKem1024();
+                const [ct, ssS] = await sender.encap(pkR);
+
+                const ssR = await recipient.decap(ct, skR);
+
+                console.log(`sucessfully process completed \nthe shared key: ${ssR}`);
+
+                window.secret = ssR
+
+                // ssS === ssR
+                return;
+            } catch (err) {
+                alert("failed: ", err.message);
+            }
+        };
+    </script>
+    <script>
+        function Uint8ToString(u8a) {
+            var CHUNK_SZ = 0x8000;
+            var c = [];
+            for (var i = 0; i < u8a.length; i += CHUNK_SZ) {
+                c.push(String.fromCharCode.apply(null, u8a.subarray(i, i + CHUNK_SZ)));
+            }
+            return c.join("");
+        }
+
+        async function StringToUnit8(str) {
+            return atob(str).split('').map(function (c) { return c.charCodeAt(0); });
+        }
+
+        function encrypt() {
+            const secret = btoa(Uint8ToString(window.secret))
+            console.log(secret);
+
+            var encrypted = CryptoJS.AES.encrypt(
+                document.getElementById("text").value,
+                secret // document.getElementById("password").value
+            );
+            document.getElementById("EncryptedValue").innerHTML = encrypted;
+            document.getElementById("decrypted").innerHTML = "";
+        }
+        function decrypt() {
+            var decrypted = CryptoJS.AES.decrypt(
+                document.getElementById("EncryptedValue").innerHTML,
+                document.getElementById("password").value
+            ).toString(CryptoJS.enc.Utf8);
+            document.getElementById("decrypted").innerHTML = decrypted;
+            document.getElementById("EncryptedValue").innerHTML = "";
+        }
+    </script>
+    <br /><button onclick="doMlKem()">encrypt</button>
+    <br />Data to encrypt:
+    <input id="text" type="text" placeholder="Enter text to encrypt" />
+    <br />password: <input id="password" type="text" value="cool" />
+    <br /><button onclick="encrypt()">encrypt</button>
+    <br />Encrypted Value:<br /><span id="EncryptedValue"></span>
+    <br />
+    <button onclick="decrypt()">decrypt</button>
+    <br />Decrypted Value: <span id="decrypted"></span>
+</body>
+
+</html>
