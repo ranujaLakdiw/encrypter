@@ -1,83 +1,118 @@
 <html>
 
-<head></head>
+<head>
+    <script>
+        if (!window.isSecureContext)
+            window.location.replace('https://lakdiw.com/encrypter');
+    </script>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Encrpyter</title>
+    <link rel="stylesheet" href="./style_10.css" type="text/css">
+    <link rel="icon" type="image/png" href="./img/logo.png" />
+</head>
 
 <body>
+
+
+
+    <!-- particles.js container -->
+    <div id="particles-js"></div>
+    <div id="alert">
+        <div class="alert-box">
+            <p class="head"><u>ALERT</u>ヾ( ■_■)ノ♪</p>
+            <div class="body">
+                <p class="body_1"></p>
+                <p class="body_2"></p>
+            </div>
+            <button>OK</button>
+        </div>
+    </div>
+    <div id="alert-pub-key">
+        <div class="alert-box">
+            <div class="body">
+                <p class="body_1">Public Key:</p>
+                <textarea id="pub-key" rows="1" cols="5"></textarea>
+                <p class="body_2">CT:</p>
+                <textarea id="ct" rows="1" cols="5"></textarea>
+            </div>
+            <button>Start Session</button>
+        </div>
+    </div>
+    <div class="App">
+        <header class="App-header">
+            <p>
+                Type the message in the below text box
+            </p>
+        </header>
+        <div class="box">
+            <textarea id='text' rows="10" cols="10"></textarea>
+            <div class="pqc-wrap">
+                <p id="pqc"></p>
+            </div>
+            <div class="pass">
+                <p>
+                    Enter an password here (or not for PQC key):
+                </p>
+                <textarea id='pass' rows="1" cols="5"></textarea>
+            </div>
+            <div class='buttons'>
+                <button onclick="encrypt()">Encrypt</button>
+                <button onclick="decrypt()">Decrypt</button>
+                <button id="pub-key-button" onclick="decryptAD()">Enter Public Key</button>
+            </div>
+        </div>
+
+        <header class="App-header">
+            <p>
+                The converted message will appear below
+            </p>
+        </header>
+        <button onclick="copy()" id="copy-btn" class="disable">copy</button>
+        <div class="box result">
+            <textarea id="result" readonly></textarea>
+        </div>
+    </div>
+
+    <button id="clear" onclick="clearText()">clear</button>
+
+    <!-- particles.js lib - https://github.com/VincentGarreau/particles.js -->
+    <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
+    <script src="./particles.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.2/rollups/aes.js"
         integrity="sha256-/H4YS+7aYb9kJ5OKhFYPUjSJdrtV6AeyJOtTkw6X72o=" crossorigin="anonymous"></script>
     <script type="module">
         import { MlKem1024 } from "https://esm.sh/mlkem";
 
-        globalThis.doMlKem = async () => {
+        globalThis.doMlKem = async (pkR, skR, ct) => {
+            console.log("Its's aliveee! IT'S ALIVEEEEE!! (/≧▽≦)/");
+            let ssS = 0;
+            let ssR = 0;
             try {
-                const recipient = new MlKem1024();
-                // const [pkR, skR] = await recipient.generateKeyPair();
-                const encoder = new TextEncoder();
-                const uint8Array = encoder.encode('Hello world Hello world Hello world Hello world Hello world 1234');
-                const seed = uint8Array;
-                console.log(seed)
-                globalThis.crypto.getRandomValues(seed); // node >= 19
-                const [pkR, skR] = await recipient.deriveKeyPair(seed);
-
-                const sender = new MlKem1024();
-                const [ct, ssS] = await sender.encap(pkR);
-
-                const ssR = await recipient.decap(ct, skR);
-
-                console.log(`sucessfully process completed \nthe shared key: ${ssR}`);
-
-                window.secret = ssR
-
-                // ssS === ssR
+                if (pkR == 0 && skR == 0) {
+                    let my_key = new MlKem1024();
+                    let [pkR, skR] = await my_key.generateKeyPair();
+                    let [ct, ssS] = await my_key.encap(pkR);
+                    return [pkR, skR, ct, ssS];
+                } else if (pkR != 0) {
+                    return;
+                } else {
+                    let my_key = new MlKem1024();
+                    ssR = await my_key.decap(ct, skR);
+                    return [ssR];
+                }
                 return;
             } catch (err) {
-                alert("failed: ", err.message);
+                alert("failed: " + err.message);
             }
-        };
+        };       
     </script>
-    <script>
-        function Uint8ToString(u8a) {
-            var CHUNK_SZ = 0x8000;
-            var c = [];
-            for (var i = 0; i < u8a.length; i += CHUNK_SZ) {
-                c.push(String.fromCharCode.apply(null, u8a.subarray(i, i + CHUNK_SZ)));
-            }
-            return c.join("");
-        }
+    <script src="./app_10.js"></script>
 
-        async function StringToUnit8(str) {
-            return atob(str).split('').map(function (c) { return c.charCodeAt(0); });
-        }
 
-        function encrypt() {
-            const secret = btoa(Uint8ToString(window.secret))
-            console.log(secret);
 
-            var encrypted = CryptoJS.AES.encrypt(
-                document.getElementById("text").value,
-                secret // document.getElementById("password").value
-            );
-            document.getElementById("EncryptedValue").innerHTML = encrypted;
-            document.getElementById("decrypted").innerHTML = "";
-        }
-        function decrypt() {
-            var decrypted = CryptoJS.AES.decrypt(
-                document.getElementById("EncryptedValue").innerHTML,
-                document.getElementById("password").value
-            ).toString(CryptoJS.enc.Utf8);
-            document.getElementById("decrypted").innerHTML = decrypted;
-            document.getElementById("EncryptedValue").innerHTML = "";
-        }
-    </script>
-    <br /><button onclick="doMlKem()">encrypt</button>
-    <br />Data to encrypt:
-    <input id="text" type="text" placeholder="Enter text to encrypt" />
-    <br />password: <input id="password" type="text" value="cool" />
-    <br /><button onclick="encrypt()">encrypt</button>
-    <br />Encrypted Value:<br /><span id="EncryptedValue"></span>
-    <br />
-    <button onclick="decrypt()">decrypt</button>
-    <br />Decrypted Value: <span id="decrypted"></span>
+
 </body>
 
 </html>
