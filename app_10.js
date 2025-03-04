@@ -195,7 +195,7 @@ const decrypt = () => {
     }
 }
 
-async function copy() {
+var copy = async () => {
     if (window.isSecureContext && navigator.clipboard) {
         await navigator.clipboard.writeText(result.value);
         c_btn.innerHTML = "copied";
@@ -211,6 +211,24 @@ async function copy() {
         }
     }
 };
+
+var copy = async (txt) => {
+    if (window.isSecureContext && navigator.clipboard) {
+        await navigator.clipboard.writeText(txt);
+    } else {
+        alert('The copy button might not work !","Sorry for any inconviences...');
+        try {
+            let copier = document.getElementById('copy');
+            copier.innerHTML = txt;
+            copier.select();
+            copier.setSelectionRange(0, 99999);
+            document.execCommand('copy');
+            copier.innerHTML = ''
+        } catch (err) {
+            console.error('Unable to copy to clipboard', err);
+        }
+    }
+}
 
 const clearText = () => {
     document.getElementById('text').focus();
@@ -246,7 +264,7 @@ const encryptAD = async () => {
     if (!session) {
         try {
             [pkR, skR, ct, ssS] = await doMlKem(pkR, skR, ct);
-            document.getElementById('pqc').innerHTML = `private key in session;</br></br>public key: ${btoa(Uint8ToString(skR))}</br></br>CI: ${btoa(Uint8ToString(ct))}`;
+            document.getElementById('pqc').innerHTML = `private key in session;<br/><br/><a href="javascript:void(0);" onclick="copy('${ btoa(Uint8ToString(skR))}')">copy public key</a><br/><br/><a href="javascript:void(0);" onclick="copy('${btoa(Uint8ToString(ct))}')">copy CT</a>`;
             document.getElementById('pub-key-button').classList.add('disable');
             secret = ssS.toString();
             session = true
@@ -340,7 +358,7 @@ const decryptAD = async () => {
             
             [ssR] = await doMlKem(pkR, skR, ct);
             secret = ssR.toString();
-            document.getElementById('pqc').innerHTML = `public key in session;</br></br>CT: ${(ct_key.value)}`;
+            document.getElementById('pqc').innerHTML = `public key in session;</br></br><a href="javascript:void(0);" onclick="copy('${ btoa(Uint8ToString(skR))}')">copy public key</a><br/><br/><a href="javascript:void(0);" onclick="copy('${btoa(Uint8ToString(ct))}')">copy CT</a>`;
             session = true;
             decrytpAD_2();
         }

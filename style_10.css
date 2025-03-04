@@ -22,6 +22,10 @@ textarea {
     resize: none;
 }
 
+#copy {
+    display: none;
+}
+
 .pqc-wrap {
     width: 100%;
     word-wrap: wrap;
@@ -33,6 +37,21 @@ textarea {
     color: red;
     width: var(--box-width);
     word-wrap: break-word;
+}
+
+#pqc a {
+    color: white;
+    border-radius: 14px;
+    background-color: red;
+    padding: 3px;
+    padding-left: 10px;
+    padding-right: 10px;
+    text-decoration: none;
+}
+
+#pqc a:active {
+    background-color: white;
+    color: red;
 }
 
 #alert, #alert-pub-key {
