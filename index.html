@@ -1,15 +1,15 @@
 <html>
 
 <head>
-    <script>
+    <!-- <script>
         if (!window.isSecureContext)
             window.location.replace('https://lakdiw.com/encrypter');
-    </script>
+    </script> -->
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Encrpyter</title>
-    <link rel="stylesheet" href="./style_10.css" type="text/css">
+    <link rel="stylesheet" href="./style.css" type="text/css">
     <link rel="icon" type="image/png" href="./img/logo.png" />
 </head>
 
@@ -55,7 +55,7 @@
                 <p>
                     Enter an password here (or not for PQC key):
                 </p>
-                <textarea id='pass' rows="1" cols="5"></textarea>
+                <textarea id='pass' rows="1" cols="5" onkeyup="change_color()"></textarea>
             </div>
             <div class='buttons'>
                 <button onclick="encrypt()">Encrypt</button>
@@ -69,7 +69,7 @@
                 The converted message will appear below
             </p>
         </header>
-        <button onclick="copy()" id="copy-btn" class="disable">copy</button>
+        <button onclick="copy_result()" id="copy-btn" class="disable">copy</button>
         <div class="box result">
             <textarea id="result" readonly></textarea>
         </div>
@@ -77,7 +77,6 @@
 
     <button id="clear" onclick="clearText()">clear</button>
 
-    <!-- particles.js lib - https://github.com/VincentGarreau/particles.js -->
     <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
     <script src="./particles.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.2/rollups/aes.js"
@@ -108,7 +107,7 @@
             }
         };       
     </script>
-    <script src="./app_10.js"></script>
+    <script src="./app.js"></script>
 
 
 
