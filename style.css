@@ -77,13 +77,27 @@ textarea {
     color: red;
 }
 
+#alert-pub-key .alert-box {
+    justify-content: center;
+}
+
 #alert-pub-key .alert-box .body{
     width: 100%;
 }
 
-#alert-pub-key textarea {
+#alert-pub-key input {
     border-radius: 20px;
     width: 80%;
+    height: 50px;
+}
+
+#alert-pub-key button {
+    padding: 15px;
+    margin-bottom: 5px;
+}
+
+#start-session {
+    margin-top: 35px !important;
 }
 
 .appear {
@@ -101,6 +115,10 @@ textarea {
     justify-content: space-between;
     align-items: center;
     padding: 20px;
+}
+
+#alert-pub-key .alert-box {
+    height: 400px;
 }
 
 #alert .head,
@@ -216,6 +234,10 @@ button:active {
 
 #pass {
     width: 50%;
+    height: 100%;
+    margin: 20px;
+    border-radius: 20px;
+    padding: 10px;
 }
 
 #result {

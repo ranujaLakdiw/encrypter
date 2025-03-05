@@ -33,11 +33,12 @@
         <div class="alert-box">
             <div class="body">
                 <p class="body_1">Public Key:</p>
-                <textarea id="pub-key" rows="1" cols="5"></textarea>
+                <input type="password" id="pub-key"/>
                 <p class="body_2">CT:</p>
-                <textarea id="ct" rows="1" cols="5"></textarea>
+                <input type="password" id="ct"/>
             </div>
-            <button>Start Session</button>
+            <button id="start-session">Start Session</button>
+            <button id="cancel-session">Cancel Session</button>
         </div>
     </div>
     <div class="App">
@@ -55,7 +56,7 @@
                 <p>
                     Enter an password here (or not for PQC key):
                 </p>
-                <textarea id='pass' rows="1" cols="5" onkeyup="change_color()"></textarea>
+                <input id='pass' onkeyup="change_color()" type="password"/>
             </div>
             <div class='buttons'>
                 <button onclick="encrypt()">Encrypt</button>

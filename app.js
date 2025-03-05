@@ -160,8 +160,7 @@ const decrypt = () => {
     let msg = document.querySelector('#text').value;
     let pass = document.querySelector('#pass').value;
     if (pass == '') {
-        decryptAD();
-        return;
+        if(session) decryptAD();
     }
     reset_pqc();
     let msg_li = msg.split('U');
@@ -184,6 +183,9 @@ const decrypt = () => {
                 animateResult();
             }
             out = CryptoJS.AES.decrypt(out, pass).toString(CryptoJS.enc.Utf8);
+            if(out=" ") {
+                alertMsg("Invalid password mate !", "You frogot it didn't you （︶^︶）");
+            }
             result.innerHTML = out;
             textAreaResize();
             c_btn.innerHTML = "copy";
@@ -325,6 +327,9 @@ const decrytpAD_2 = async () => {
                 animateResult();
             }
             let out = CryptoJS.AES.decrypt(de, secret).toString(CryptoJS.enc.Utf8);
+            if(out=" ") {
+                alertMsg("Invalid public key mate !", "You copied something else didn't you");
+            }
             result.innerHTML = out;
             textAreaResize();
             c_btn.innerHTML = "copy";
@@ -340,14 +345,15 @@ const decrytpAD_2 = async () => {
 
 const decryptAD = async () => {
     let alert = document.getElementById("alert-pub-key");
-    let alert_btn = document.querySelector('#alert-pub-key button');
+    let alert_start_btn = document.querySelector('#start-session');
+    let alert_cancel_btn = document.querySelector('#cancel-session');
     let pub_key = document.getElementById("pub-key");
     let ct_key = document.getElementById("ct");
     
     if (!session) {
         let btn_click = async () => {
             alert.classList.remove('appear');
-            alert_btn.removeEventListener('click', btn_click);
+            alert_start_btn.removeEventListener('click', btn_click);
             if (pub_key.value == '' || ct_key.value == '') {
                 alertMsg("Error...", "you are missing entries!");
                 return
@@ -362,8 +368,13 @@ const decryptAD = async () => {
             session = true;
             decrytpAD_2();
         }
+        let btn_cancel_click = async () => {
+            alert.classList.remove('appear');
+            alert_cancel_btn.addEventListener('click', btn_cancel_click);
+        }
         alert.classList.add('appear');
-        alert_btn.addEventListener('click', btn_click);
+        alert_start_btn.addEventListener('click', btn_click);
+        alert_cancel_btn.addEventListener('click', btn_cancel_click);
     } else {
         console.log("session online");
         decrytpAD_2();
