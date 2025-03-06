@@ -22,6 +22,20 @@ textarea {
     resize: none;
 }
 
+textarea:focus, input:focus {
+    outline-offset: 4px;
+    outline: 2px orange solid;
+    border-color: orange;
+    transition: .1s ease-out;
+}
+
+textarea, input {
+    border: 3px white solid;
+    background-color: #000000;
+    color: white;
+    transition: .2s linear;
+}
+
 #copy {
     display: none;
 }
@@ -97,7 +111,7 @@ textarea {
 #alert-pub-key input {
     border-radius: 20px;
     width: 80%;
-    height: 50px;
+    height: 40px;
 }
 
 #alert-pub-key button {
@@ -218,7 +232,6 @@ button:active {
 }
 
 .pass {
-    /* width: 100%; */
     border: red 1px solid;
     box-shadow: red 0 0 10px;
     border-radius: 10px;
@@ -228,7 +241,7 @@ button:active {
     padding: 10px;
     justify-content: center;
     align-items: center;
-    backdrop-filter: blur(5px);
+    backdrop-filter: blur(10px);
     transition: linear .3s;
 }
 
