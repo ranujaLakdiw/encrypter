@@ -56,7 +56,8 @@ textarea {
     box-shadow: red 0 0 20px;
 }
 
-#alert, #alert-pub-key {
+#alert,
+#alert-pub-key {
     position: fixed;
     top: 0;
     z-index: 500;
@@ -79,10 +80,18 @@ textarea {
 
 #alert-pub-key .alert-box {
     justify-content: center;
+    height: 450px;
 }
 
-#alert-pub-key .alert-box .body{
+#alert-pub-key .alert-box .body {
     width: 100%;
+}
+
+#alert-pub-key .body div {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
 }
 
 #alert-pub-key input {
@@ -115,10 +124,6 @@ textarea {
     justify-content: space-between;
     align-items: center;
     padding: 20px;
-}
-
-#alert-pub-key .alert-box {
-    height: 400px;
 }
 
 #alert .head,
@@ -227,13 +232,19 @@ button:active {
     transition: linear .3s;
 }
 
-.pass p{
+.pass p {
     color: white !important;
     width: 50%;
 }
 
-#pass {
+.pass-input-box {
+    display: flex;
+    flex-direction: row;
     width: 50%;
+}
+
+#pass {
+    width: 100%;
     height: 100%;
     margin: 20px;
     border-radius: 20px;
@@ -284,7 +295,7 @@ button:active {
 }
 
 .disable:focus {
-    color:blue;
+    color: blue;
 }
 
 .disable:active {
@@ -306,21 +317,23 @@ button:active {
         transform: translateX(50%);
     }
 
+}
+
+@media screen and (max-width: 588px) {
     .pass {
         flex-direction: column;
         margin: 30;
         width: var(--box-width);
     }
-
-    .pass p, .pass #pass {
+    
+    .pass p,
+    .pass-input-box {
         width: 100%;
     }
-}
-
-@media screen and (max-width: 588px) {
     .alert-box {
         width: 80%;
     }
+
     #clear {
         padding: 10px;
         font-size: 15px;
@@ -342,18 +355,21 @@ button:active {
         background-color: white;
         box-shadow: 0 0 0 white;
     }
+
     10% {
         opacity: 1;
         color: white;
         background-color: white;
         box-shadow: 0 0 5em white;
     }
+
     70% {
         opacity: 1;
         color: white;
         background-color: white;
         box-shadow: 0 0 0 white;
     }
+
     100% {
         opacity: 1;
         color: var(--result-color);
@@ -367,15 +383,19 @@ button:active {
         position: absolute;
         margin-left: .5rem;
     }
+
     10% {
         margin-left: -0.5rem;
     }
+
     30% {
         margin-left: .5rem;
     }
+
     60% {
         margin-left: -0.5rem;
     }
+
     100% {
         position: relative;
         margin-left: 0;
@@ -405,3 +425,44 @@ canvas {
     background-size: cover;
     background-position: 50% 50%;
 }
+
+.password-visibility {
+    position: relative;
+    margin: 10px;
+}
+
+.password-visibility img{
+    position: relative;
+    margin-top: 20px;
+    margin-bottom: 20px;
+    height: 20px;
+    width: 20px;
+    color: white;
+}
+
+.password-visibility svg {
+    position: absolute;
+    fill: white;
+    width: 50px;
+    height: 50px;
+    left: -15px;
+    top: 5px;
+    stroke-width: 0px;
+}
+
+.password-visibility-change {
+    animation: circle .3s linear;
+}
+
+@keyframes circle {
+    0% {
+        stroke-width: 0px;
+    }
+    50% {
+        stroke-width: 40px;
+    }
+    100% {
+        stroke-width: 1px;
+    }
+}
+

@@ -9,7 +9,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Encrpyter</title>
-    <link rel="stylesheet" href="./style.css" type="text/css">
+    <link rel="stylesheet" href="./style_2.css" type="text/css">
     <link rel="icon" type="image/png" href="./img/logo.png" />
 </head>
 
@@ -33,9 +33,21 @@
         <div class="alert-box">
             <div class="body">
                 <p class="body_1">Public Key:</p>
-                <input type="password" id="pub-key"/>
+                <div>
+                    <input type="password" id="pub-key" />
+                    <a href="javascript:void(0);" class="password-visibility"
+                        onclick="showPass(document.getElementById('pub-key'), this)">
+                        <img src="./img/eye-closed.svg" />
+                    </a>
+                </div>
                 <p class="body_2">CT:</p>
-                <input type="password" id="ct"/>
+                <div>
+                    <input type="password" id="ct" />
+                    <a href="javascript:void(0);" class="password-visibility"
+                        onclick="showPass(document.getElementById('ct'), this)">
+                        <img src="./img/eye-closed.svg" />
+                    </a>
+                </div>
             </div>
             <button id="start-session">Start Session</button>
             <button id="cancel-session">Cancel Session</button>
@@ -56,12 +68,18 @@
                 <p>
                     Enter an password here (or not for PQC key):
                 </p>
-                <input id='pass' onkeyup="change_color()" type="password"/>
+                <div class="pass-input-box">
+                    <input id='pass' onkeyup="change_color()" type="password" class="password" />
+                    <a href="javascript:void(0);" class="password-visibility"
+                        onclick="showPass(document.getElementById('pass'), this)">
+                        <img src="./img/eye-closed.svg" />
+                    </a>
+                </div>
             </div>
             <div class='buttons'>
                 <button onclick="encrypt()">Encrypt</button>
                 <button onclick="decrypt()">Decrypt</button>
-                <button id="pub-key-button" onclick="decryptAD()">Enter Public Key</button>
+                <button id="pub-key-button">Enter Public Key</button>
             </div>
         </div>
 
@@ -108,7 +126,7 @@
             }
         };       
     </script>
-    <script src="./app.js"></script>
+    <script src="./app_2.js"></script>
 
 
 

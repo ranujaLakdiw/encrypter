@@ -41,6 +41,15 @@ const textAreaResize = () => {
     result.style.height = (result.scrollHeight) + 'px';
 };
 
+const resetPass = () => {
+    document.querySelectorAll('input').forEach((el) => {
+        el.type = "password";
+    });
+    document.querySelectorAll('.password-visibility').forEach((el) => {
+        el.innerHTML = eyeClosed;
+    });
+}
+
 const alertMsg = (text_1, text_2) => {
     let alert = document.querySelector('#alert');
     let alert_text_1 = document.querySelector('#alert .body_1');
@@ -60,13 +69,6 @@ const alertMsg = (text_1, text_2) => {
     alert_btn.addEventListener('click', btn_click);
     animateErr();
 };
-
-const pubKey_prompt = () => {
-    let alert = document.querySelector('#alert-pub-key');
-    let alert_btn = document.querySelector('#alert-pub-key button');
-
-
-}
 
 const getIndex = (str, list) => {
     return list.findIndex((e) => {
@@ -128,7 +130,7 @@ const encrypt = async () => {
         encryptAD();
         return;
     }
-    reset_pqc()
+    unCancelSession();
     if (msg != '') {
         var en = CryptoJS.AES.encrypt(msg, pass);
         let en_li = (en.toString()).split('').map(el => el.charCodeAt(0));
@@ -160,9 +162,9 @@ const decrypt = () => {
     let msg = document.querySelector('#text').value;
     let pass = document.querySelector('#pass').value;
     if (pass == '') {
-        if(session) decryptAD();
+        if (session) decryptAD();
     }
-    reset_pqc();
+    unCancelSession();
     let msg_li = msg.split('U');
     if (msg_li.length >= 1 && msg_li[0] != "") {
         try {
@@ -183,7 +185,7 @@ const decrypt = () => {
                 animateResult();
             }
             out = CryptoJS.AES.decrypt(out, pass).toString(CryptoJS.enc.Utf8);
-            if(out=="") {
+            if (out == "") {
                 alertMsg("Invalid password mate !", "You frogot it didn't you （︶^︶）");
             }
             result.innerHTML = out;
@@ -266,10 +268,10 @@ const encryptAD = async () => {
     if (!session) {
         try {
             [pkR, skR, ct, ssS] = await doMlKem(pkR, skR, ct);
-            document.getElementById('pqc').innerHTML = `private key in session;<br/><br/><a href="javascript:void(0);" onclick="copy('${ btoa(Uint8ToString(skR))}')">copy public key</a><br/><br/><a href="javascript:void(0);" onclick="copy('${btoa(Uint8ToString(ct))}')">copy CT</a>`;
-            document.getElementById('pub-key-button').classList.add('disable');
+            document.getElementById('pqc').innerHTML = `private key in session;<br/><br/><a href="javascript:void(0);" onclick="copy('${btoa(Uint8ToString(skR))}')">copy public key</a><br/><br/><a href="javascript:void(0);" onclick="copy('${btoa(Uint8ToString(ct))}')">copy CT</a>`;
             secret = ssS.toString();
             session = true
+            cancelSession();
         } catch (err) {
             console.log("session online");
         }
@@ -293,7 +295,7 @@ const encryptAD = async () => {
                 return to(e);
             }).join('U');
             activateBtn();
-            animateResult();            
+            animateResult();
         }
         result.innerHTML = out;
         textAreaResize();
@@ -317,7 +319,7 @@ const decrytpAD_2 = async () => {
                 }
                 return String.fromCharCode(num);
             }).join('');
-            
+
             if (esc) {
                 alertMsg("Invalid ecrypted format !", "haven't your mother taught you better");
                 out = "";
@@ -327,7 +329,7 @@ const decrytpAD_2 = async () => {
                 animateResult();
             }
             let out = CryptoJS.AES.decrypt(de, secret).toString(CryptoJS.enc.Utf8);
-            if(out=="") {
+            if (out == "") {
                 alertMsg("Invalid public key mate !", "You copied something else didn't you");
             }
             result.innerHTML = out;
@@ -339,8 +341,8 @@ const decrytpAD_2 = async () => {
     } else {
         alertMsg("Enter something first...", "Why waste processing power on an empty string?")
     }
-    
-    
+
+
 }
 
 const decryptAD = async () => {
@@ -349,8 +351,9 @@ const decryptAD = async () => {
     let alert_cancel_btn = document.querySelector('#cancel-session');
     let pub_key = document.getElementById("pub-key");
     let ct_key = document.getElementById("ct");
-    
+
     if (!session) {
+        resetPass();
         let btn_click = async () => {
             alert.classList.remove('appear');
             alert_start_btn.removeEventListener('click', btn_click);
@@ -361,16 +364,16 @@ const decryptAD = async () => {
             document.getElementById('pub-key-button').classList.add('disable');
             skR = new Uint8Array(StringToUnit8(pub_key.value));
             ct = new Uint8Array(StringToUnit8(ct_key.value));
-            
+
             [ssR] = await doMlKem(pkR, skR, ct);
             secret = ssR.toString();
-            document.getElementById('pqc').innerHTML = `public key in session;</br></br><a href="javascript:void(0);" onclick="copy('${ btoa(Uint8ToString(skR))}')">copy public key</a><br/><br/><a href="javascript:void(0);" onclick="copy('${btoa(Uint8ToString(ct))}')">copy CT</a>`;
+            document.getElementById('pqc').innerHTML = `public key in session;</br></br><a href="javascript:void(0);" onclick="copy('${btoa(Uint8ToString(skR))}')">copy public key</a><br/><br/><a href="javascript:void(0);" onclick="copy('${btoa(Uint8ToString(ct))}')">copy CT</a>`;
             session = true;
             decrytpAD_2();
         }
         let btn_cancel_click = async () => {
             alert.classList.remove('appear');
-            alert_cancel_btn.addEventListener('click', btn_cancel_click);
+            alert_cancel_btn.removeEventListener('click', btn_cancel_click);
         }
         alert.classList.add('appear');
         alert_start_btn.addEventListener('click', btn_click);
@@ -384,7 +387,7 @@ const decryptAD = async () => {
 const change_color = () => {
     let el = document.querySelector('.pass');
     let p = document.getElementById('pass');
-    
+
     if (p.value != "") {
         el.style.boxShadow = "green 0 0 10px";
         el.style.border = "green 1px solid";
@@ -393,4 +396,49 @@ const change_color = () => {
         el.style.boxShadow = "red 0 0 10px";
         el.style.border = "red 1px solid";
     }
+}
+
+const eyeOpen = `
+<img src="./img/eye-open.svg">
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="50" cy="50" r="10" fill="transparent" stroke="white">
+        <animate attributeName="r" begin="0" dur="1s" from="0" to="100%"/>
+    </circle>
+</svg>`;
+const eyeClosed = `
+<img src="./img/eye-closed.svg">
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="50" cy="50" r="10" fill="transparent" stroke="white">
+        <animate attributeName="r" begin="0" dur="1s" from="0" to="100%"/>
+    </circle>
+</svg>`;
+
+const showPass = (pass, el) => {
+    if (pass.type == "text") {
+        pass.type = "password";
+        el.innerHTML = eyeClosed;
+        el.querySelector('svg').classList.add("password-visibility-change");
+    } else {
+        pass.type = "text";
+        el.innerHTML = eyeOpen;
+        el.querySelector('svg').classList.add("password-visibility-change");
+    }
+    isShowPass = !isShowPass
+}
+
+const pubKey = document.getElementById("pub-key-button");
+pubKey.addEventListener('click', decryptAD);
+
+function unCancelSession() {
+    reset_pqc();
+    pubKey.addEventListener('click', decryptAD);
+    pubKey.removeEventListener('click', unCancelSession);
+    pubKey.innerHTML = "Enter Public Key";
+}
+
+function cancelSession() {
+    pubKey.innerHTML = "Cancel Session";
+    pubKey.removeEventListener('click', decryptAD);
+    pubKey.addEventListener('click', unCancelSession);
+
 }
