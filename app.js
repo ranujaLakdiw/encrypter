@@ -183,7 +183,7 @@ const decrypt = () => {
                 animateResult();
             }
             out = CryptoJS.AES.decrypt(out, pass).toString(CryptoJS.enc.Utf8);
-            if(out=" ") {
+            if(out=="") {
                 alertMsg("Invalid password mate !", "You frogot it didn't you （︶^︶）");
             }
             result.innerHTML = out;
@@ -327,7 +327,7 @@ const decrytpAD_2 = async () => {
                 animateResult();
             }
             let out = CryptoJS.AES.decrypt(de, secret).toString(CryptoJS.enc.Utf8);
-            if(out=" ") {
+            if(out=="") {
                 alertMsg("Invalid public key mate !", "You copied something else didn't you");
             }
             result.innerHTML = out;
