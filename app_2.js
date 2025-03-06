@@ -67,6 +67,7 @@ const alertMsg = (text_1, text_2) => {
     alert_text_2.innerHTML = text_2;
     alert.classList.add('appear');
     alert_btn.addEventListener('click', btn_click);
+    alert_btn.focus();
     animateErr();
 };
 
