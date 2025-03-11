@@ -1,4 +1,4 @@
-# encryptor
+# Encryptor
 For Neja 💖
 https://lakdiw.com/encrypter
 
