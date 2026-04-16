@@ -29,28 +29,42 @@
             <button>OK</button>
         </div>
     </div>
-    <div id="alert-pub-key">
-        <div class="alert-box">
-            <div class="body">
-                <p class="body_1">Public Key:</p>
-                <div>
-                    <input type="password" id="pub-key" />
-                    <a href="javascript:void(0);" class="password-visibility"
-                        onclick="showPass(document.getElementById('pub-key'), this)">
-                        <img src="./img/eye-closed.svg" />
-                    </a>
+    <div id="alert-session">
+        <div class="alert-box session-box">
+            <p id="session-dialog-title">Create Session</p>
+            <div class="session-steps">
+                <div class="session-step">
+                    <p>1. Copy your public key and send it to the other person:</p>
+                    <a id="copy-pk-link" href="javascript:void(0);">copy public key</a>
                 </div>
-                <p class="body_2">CT:</p>
-                <div>
-                    <input type="password" id="ct" />
-                    <a href="javascript:void(0);" class="password-visibility"
-                        onclick="showPass(document.getElementById('ct'), this)">
-                        <img src="./img/eye-closed.svg" />
-                    </a>
+                <div class="session-step">
+                    <p>2. Paste the other person's public key:</p>
+                    <div class="session-input-row">
+                        <input type="password" id="session-other-pk" />
+                        <a href="javascript:void(0);" class="password-visibility"
+                            onclick="showPass(document.getElementById('session-other-pk'), this)">
+                            <img src="./img/eye-closed.svg" />
+                        </a>
+                    </div>
+                </div>
+                <div class="session-step">
+                    <p>3. Copy your CT and send it to the other person:</p>
+                    <a id="copy-ct-link" href="javascript:void(0);" class="disable">copy CT</a>
+                    <span id="ct-status"></span>
+                </div>
+                <div class="session-step">
+                    <p>4. Paste the other person's CT:</p>
+                    <div class="session-input-row">
+                        <input type="password" id="session-other-ct" />
+                        <a href="javascript:void(0);" class="password-visibility"
+                            onclick="showPass(document.getElementById('session-other-ct'), this)">
+                            <img src="./img/eye-closed.svg" />
+                        </a>
+                    </div>
                 </div>
             </div>
-            <button id="start-session">Start Session</button>
-            <button id="cancel-session">Cancel Session</button>
+            <button id="session-start-btn">Create Session</button>
+            <button id="session-cancel-btn">Cancel</button>
         </div>
     </div>
     <div class="App">
@@ -66,7 +80,7 @@
             </div>
             <div class="pass">
                 <p>
-                    Enter an password here (or not for PQC key):
+                    Enter a password here (or use PQC key):
                 </p>
                 <div class="pass-input-box">
                     <input id='pass' onkeyup="change_color()" type="password" class="password" />
@@ -79,7 +93,7 @@
             <div class='buttons'>
                 <button onclick="encrypt()">Encrypt</button>
                 <button onclick="decrypt()">Decrypt</button>
-                <button id="pub-key-button">Enter Public Key</button>
+                <button id="pub-key-button">Create Session</button>
             </div>
         </div>
 
@@ -103,28 +117,20 @@
     <script type="module">
         import { MlKem1024 } from "https://esm.sh/mlkem";
 
-        globalThis.doMlKem = async (pkR, skR, ct) => {
-            console.log("Its's aliveee! IT'S ALIVEEEEE!! (/≧▽≦)/");
-            let ssS = 0;
-            let ssR = 0;
-            try {
-                if (pkR == 0 && skR == 0) {
-                    let my_key = new MlKem1024();
-                    let [pkR, skR] = await my_key.generateKeyPair();
-                    let [ct, ssS] = await my_key.encap(pkR);
-                    return [pkR, skR, ct, ssS];
-                } else if (pkR != 0) {
-                    return;
-                } else {
-                    let my_key = new MlKem1024();
-                    ssR = await my_key.decap(ct, skR);
-                    return [ssR];
-                }
-                return;
-            } catch (err) {
-                alert("failed: " + err.message);
-            }
-        };       
+        globalThis.mlkem_generateKeyPair = async () => {
+            const key = new MlKem1024();
+            return await key.generateKeyPair(); // returns [pk, sk]
+        };
+
+        globalThis.mlkem_encap = async (pk) => {
+            const key = new MlKem1024();
+            return await key.encap(pk); // returns [ct, ss]
+        };
+
+        globalThis.mlkem_decap = async (ct, sk) => {
+            const key = new MlKem1024();
+            return await key.decap(ct, sk); // returns ss
+        };
     </script>
     <script src="./app_2.js"></script>
 
