@@ -1,10 +1,13 @@
-const code = [
-    'h',
-    'u',
-    'H',
-]
+// ─────────────────────────────────────────────────────────────
+// Huh encrypter · app logic
+// Crypto: AES (crypto-js) with either a shared password or an
+// ML-KEM-1024 session secret. Output is "huH": base-3 text over
+// the alphabet h / u / H, chunks joined with U.
+// ─────────────────────────────────────────────────────────────
 
-// --- PQC state ---
+const code = ['h', 'u', 'H'];
+
+// ---------- PQC state ----------
 // Both parties run the same flow: each generates a keypair, exchanges public
 // keys, encapsulates the other's pk to get (myCt, myEncapSs), then decapsulates
 // the other's CT (otherCt) with their sk to get myDecapSs.
@@ -31,79 +34,236 @@ const deriveSessionName = (ssBytes) => {
     return `${a}-${b}-${n < 10 ? '0' + n : n}`;
 };
 
-document.getElementById('text').focus();
+// ---------- DOM ----------
+const $ = (id) => document.getElementById(id);
 
-const c_btn = document.querySelector('#copy-btn');
-const result = document.querySelector("#result");
+const textIn       = $('text');
+const huhChip      = $('huh-chip');
+const clearBtn     = $('clear');
+const modeLabel    = $('mode-label');
+const modePwBtn    = $('mode-password');
+const modeSessBtn  = $('mode-session');
+const panelPw      = $('panel-password');
+const panelSess    = $('panel-session');
+const sessionOn    = $('session-on');
+const sessionOff   = $('session-off');
+const sessionNameEl = $('session-name');
+const passIn       = $('pass');
+const copyKeyBtn   = $('copy-key');
+const copyReplyBtn = $('copy-reply');
+const editSessBtn  = $('edit-session');
+const endSessBtn   = $('end-session');
+const startPairBtn = $('start-pairing');
+const encryptBtn   = $('encrypt-btn');
+const decryptBtn   = $('decrypt-btn');
+const errorBox     = $('error');
 
-const activateBtn = () => {
-    c_btn.classList.remove('disable');
+const resultLabel  = $('result-label');
+const resultMeta   = $('result-meta');
+const resultMetaPhone = $('result-meta-phone');
+const resultOut    = $('result-out');
+const resultEmpty  = $('result-empty');
+const result       = $('result');
+const copyBtn      = $('copy-btn');
+const copyLabel    = $('copy-label');
+const lockedWith   = $('locked-with');
+
+const dialogEl     = $('pair-dialog');
+const dialogTitle  = $('pair-title');
+const dialogError  = $('dialog-error');
+const copyPkLink   = $('copy-pk-link');
+const copyCtLink   = $('copy-ct-link');
+const ctStatus     = $('ct-status');
+const otherPkIn    = $('session-other-pk');
+const otherCtIn    = $('session-other-ct');
+const startBtn     = $('session-start-btn');
+const cancelBtn    = $('session-cancel-btn');
+const srStatus     = $('sr-status');
+
+// ---------- UI state ----------
+var mode = 'password';   // 'password' | 'session'
+var resultKind = null;   // 'huh' | 'plain' | null
+
+const FACE = {
+    alarm: 'ヾ( ■_■)ノ♪',
+    wave:  '( ・_・)ノ',
+    huh:   '( ・◇・)?',
+    grump: '（︶^︶）',
+    dead:  '(×_×)',
 };
 
-const deactivateBtn = () => {
-    c_btn.classList.add('disable');
+const isHuhText = (s) => {
+    const t = s.trim();
+    return t.length > 8 && /^[huHU]+$/.test(t);
 };
 
-const hideAlert = (el, callback) => {
-    el.classList.add('disappear');
-    setTimeout(() => {
-        el.classList.remove('appear', 'disappear');
-        if (callback) callback();
-    }, 200);
-};
-
-const animateResult = () => {
-    result.style.animation = "none";
-    void result.offsetWidth; // force reflow so the animation restarts each time
-    result.style.animation = "2s bounceIn";
-    setTimeout(() => {
-        result.style.animation = "";
-    }, 2000);
-};
-
-const animateErr = () => {
-    let temp = document.querySelector('.alert-box');
-    temp.style.animation = "none";
-    void temp.offsetWidth; // force reflow
-    temp.style.animation = ".5s shake";
-    clearText();
-    setTimeout(() => {
-        temp.style.animation = "";
-    }, 500);
-};
-
-const textAreaResize = () => {
-    result.style.height = '1px';
-    result.style.height = (result.scrollHeight) + 'px';
-};
-
-const alertMsg = (text_1, text_2) => {
-    let alert = document.querySelector('#alert');
-    let alert_text_1 = document.querySelector('#alert .body_1');
-    let alert_text_2 = document.querySelector('#alert .body_2');
-    let alert_btn = document.querySelector('#alert button');
-
-    let btn_click = () => {
-        alert_btn.removeEventListener('click', btn_click);
-        hideAlert(alert, () => {
-            alert_text_1.innerHTML = '';
-            alert_text_2.innerHTML = '';
-        });
-    };
-
-    alert_text_1.innerHTML = text_1;
-    alert_text_2.innerHTML = text_2;
-    alert.classList.add('appear');
-    alert_btn.addEventListener('click', btn_click);
-    alert_btn.focus();
-    animateErr();
-};
-
-const getIndex = (str, list) => {
-    return list.findIndex((e) => {
-        return str == e;
+// ---------- Errors (inline, replaces the old modal alert) ----------
+const fillError = (box, face, title, body) => {
+    const faceEl  = box.querySelector('.face');
+    const titleEl = box.querySelector('.error-title');
+    const bodyEl  = box.querySelector('.error-body');
+    // Empty the box first, so a repeated, identical error is still a fresh
+    // insertion that role="alert" announces.
+    faceEl.textContent = '';
+    titleEl.textContent = '';
+    bodyEl.textContent = '';
+    box.hidden = false;
+    box.classList.remove('shake');
+    void box.offsetWidth; // restart the animation each time
+    box.classList.add('shake');
+    requestAnimationFrame(() => {
+        faceEl.textContent = face || FACE.alarm;
+        titleEl.textContent = title;
+        bodyEl.textContent = body || '';
     });
 };
+
+// Polite status messages for screen readers (copied, paired, ended).
+const announce = (text) => {
+    srStatus.textContent = '';
+    requestAnimationFrame(() => { srStatus.textContent = text; });
+};
+
+const showError = (face, title, body) => fillError(errorBox, face, title, body);
+const clearError = () => { errorBox.hidden = true; };
+
+const showDialogError = (face, title, body) => fillError(dialogError, face, title, body);
+const clearDialogError = () => { dialogError.hidden = true; };
+
+// Kept for callers that still use the old (title, body) signature.
+const alertMsg = (title, body) => showError(FACE.alarm, title, body);
+
+// ---------- Compose state ----------
+const refreshCompose = () => {
+    const huh = isHuhText(textIn.value);
+    huhChip.hidden = !huh;
+    textIn.classList.toggle('huh', huh);
+    modeLabel.textContent = huh ? 'Decrypt with' : 'Encrypt with';
+    encryptBtn.classList.toggle('btn-primary', !huh);
+    encryptBtn.classList.toggle('btn-secondary', huh);
+    decryptBtn.classList.toggle('btn-primary', huh);
+    decryptBtn.classList.toggle('btn-secondary', !huh);
+};
+
+const refreshSessionPanel = () => {
+    sessionOn.hidden = !session;
+    sessionOff.hidden = session;
+    sessionNameEl.textContent = session ? sessionName : '—';
+};
+
+const setMode = (m) => {
+    mode = m;
+    const pw = m === 'password';
+    modePwBtn.setAttribute('aria-pressed', pw ? 'true' : 'false');
+    modeSessBtn.setAttribute('aria-pressed', pw ? 'false' : 'true');
+    panelPw.hidden = !pw;
+    panelSess.hidden = pw;
+    clearError();
+    if (!pw) refreshSessionPanel();
+};
+
+// ---------- Result ----------
+const resizeResult = () => {
+    result.style.height = '1px';
+    result.style.height = result.scrollHeight + 'px';
+};
+
+const showResult = (value, kind, via) => {
+    resultKind = kind;
+    result.value = value;
+    result.classList.toggle('huh', kind === 'huh');
+    resultOut.hidden = false;
+    resultEmpty.hidden = true;
+
+    const locked = kind === 'huh';
+    resultLabel.textContent = locked ? 'Locked · ready to send' : 'Unlocked';
+    resultMeta.textContent = locked ? `${value.length} chars of huh` : `${value.length} chars`;
+    const viaText = via === 'session' ? `in ${sessionName}` : 'with a password';
+    cancelFlash(copyBtn);
+    copyLabel.textContent = locked ? 'Copy huH' : 'Copy text';
+    lockedWith.textContent = (locked ? 'locked ' : 'unlocked ') + viaText;
+    resultMetaPhone.textContent = viaText;
+
+    clearError();
+    resizeResult();
+    resultOut.classList.remove('pop');
+    void resultOut.offsetWidth;
+    resultOut.classList.add('pop');
+};
+
+// ---------- Clipboard ----------
+// Temporarily swaps a button's label (every <span> inside it, so the
+// desktop and phone variants of a label both change).
+const flashLabel = (btn, text, ms = 1600) => {
+    const spans = btn.querySelectorAll('span');
+    const targets = spans.length ? Array.from(spans) : [btn];
+    if (btn._flashTimer) {
+        clearTimeout(btn._flashTimer);
+        targets.forEach((el, i) => { el.textContent = btn._flashOriginal[i]; });
+    }
+    btn._flashOriginal = targets.map((el) => el.textContent);
+    targets.forEach((el) => { el.textContent = text; });
+    btn._flashTimer = setTimeout(() => {
+        targets.forEach((el, i) => { el.textContent = btn._flashOriginal[i]; });
+        btn._flashTimer = null;
+    }, ms);
+};
+
+const cancelFlash = (btn) => {
+    if (btn._flashTimer) {
+        clearTimeout(btn._flashTimer);
+        btn._flashTimer = null;
+    }
+};
+
+// Legacy path (no async clipboard, e.g. plain http): select the text in a
+// throwaway textarea and execCommand('copy'). The textarea is created inside
+// the open dialog, since everything outside a modal <dialog> is inert.
+const legacyCopy = (txt) => {
+    const host = dialogEl.open ? dialogEl : document.body;
+    const sink = document.createElement('textarea');
+    sink.className = 'sink';
+    sink.setAttribute('aria-hidden', 'true');
+    sink.tabIndex = -1;
+    sink.value = txt;
+    host.appendChild(sink);
+    try {
+        sink.focus({ preventScroll: true });
+        if (document.activeElement !== sink) return false;
+        sink.select();
+        sink.setSelectionRange(0, txt.length);
+        return document.execCommand('copy');
+    } finally {
+        sink.remove();
+    }
+};
+
+const copyText = async (txt, btn, onFail) => {
+    const done = () => {
+        if (btn) flashLabel(btn, 'Copied!');
+        announce('Copied to clipboard');
+    };
+    if (window.isSecureContext && navigator.clipboard) {
+        try {
+            await navigator.clipboard.writeText(txt);
+            done();
+            return;
+        } catch (_) { /* fall through to the legacy path */ }
+    }
+    let ok = false;
+    try {
+        ok = legacyCopy(txt);
+    } catch (err) {
+        console.error('Unable to copy to clipboard', err);
+    }
+    if (btn) btn.focus({ preventScroll: true });
+    if (ok) { done(); return; }
+    (onFail || showError)(FACE.wave, 'Hold up!',
+        'Copying might not work in this browser setting. Select the text and copy it by hand.');
+};
+
+// ---------- huH codec ----------
+const getIndex = (str, list) => list.findIndex((e) => str == e);
 
 const getPower = (num) => {
     let count = 0;
@@ -112,7 +272,7 @@ const getPower = (num) => {
             return count - 1;
         count++;
     }
-}
+};
 
 const to = (i) => {
     let p = getPower(i);
@@ -125,35 +285,27 @@ const to = (i) => {
         }
         p--;
     }
-    return (out);
+    return out;
 };
 
 const from = (i) => {
     let num = 0;
-    let li = i.split('');
+    const li = i.split('');
     let p = li.length - 1;
-    for (e of li) {
-        index = getIndex(e, code);
+    for (const e of li) {
+        const index = getIndex(e, code);
         if (index < 0) {
             return -1;
         }
         num += index * (3 ** p);
         p--;
-    };
-    return (num);
+    }
+    return num;
 };
 
-const reset_pqc = () => {
-    pkR = skR = myCt = myEncapSs = ss = null;
-    session = false;
-    sessionName = otherPkStored = otherCtStored = null;
-    document.getElementById('pqc').innerHTML = '';
-    document.getElementById('pub-key-button').classList.remove('disable');
-}
-
 const compressToHuH = (base64_str) => {
-    let binary_string = window.atob(base64_str);
-    let arr = [];
+    const binary_string = window.atob(base64_str);
+    const arr = [];
     let i = 0;
     while (i < binary_string.length) {
         if (i + 3 <= binary_string.length) {
@@ -171,8 +323,8 @@ const compressToHuH = (base64_str) => {
 };
 
 const decompressFromHuH = (msg) => {
-    let en_li = msg.split('U').map(e => {
-        let num = from(e);
+    const en_li = msg.split('U').map(e => {
+        const num = from(e);
         if (num < 0) throw new Error("Invalid format");
         return num;
     });
@@ -196,130 +348,105 @@ const decompressFromHuH = (msg) => {
     }
 };
 
-const encrypt = async () => {
-    let out = "";
-    let msg = document.querySelector('#text').value;
-    let pass = document.querySelector('#pass').value;
+// ---------- Encrypt / Decrypt ----------
+// Returns the AES key for the current mode, or null after showing why not.
+const currentKey = (verb) => {
+    if (mode === 'password') {
+        const pass = passIn.value;
+        if (!pass) {
+            passIn.focus();
+            showError(FACE.wave, 'Password, please',
+                verb === 'encrypt' ? 'Add the one you both know, or switch to Session.'
+                                   : 'Type the one it was locked with.');
+            return null;
+        }
+        return pass;
+    }
+    if (!session) {
+        showError(FACE.alarm, 'No session yet',
+            verb === 'encrypt' ? 'Pair with someone first, then lock away.'
+                               : 'Pair with someone first, then unlock away.');
+        return null;
+    }
+    return ss;
+};
 
-    if (pass == '') {
-        encryptAD();
+const encrypt = () => {
+    const msg = textIn.value;
+    if (!msg.trim()) {
+        textIn.focus();
+        showError(FACE.alarm, 'Enter something first…', 'I mean, we can encrypt nothing, and that’s nothing.');
         return;
     }
-    unCancelSession();
-    if (msg != '') {
-        var en = CryptoJS.AES.encrypt(msg, pass);
-        out = compressToHuH(en.toString());
-        activateBtn();
-        animateResult();
-        result.value = out;
-        textAreaResize();
-        c_btn.innerHTML = "copy";
-
-    } else {
-        alertMsg("Enter something first...", "I mean we can encrypt nothing, and that's nothing")
+    const key = currentKey('encrypt');
+    if (key === null) return;
+    try {
+        const en = CryptoJS.AES.encrypt(msg, key);
+        showResult(compressToHuH(en.toString()), 'huh', mode);
+    } catch (err) {
+        showError(FACE.dead, 'Something went wrong', err.message || 'An unknown error occurred.');
     }
-
-}
+};
 
 const decrypt = () => {
-    let out = "";
-    let msg = document.querySelector('#text').value;
-    let pass = document.querySelector('#pass').value;
-    if (pass == '') {
-        decryptAD();
+    const msg = textIn.value.trim();
+    if (!msg) {
+        textIn.focus();
+        showError(FACE.alarm, 'Enter something first…', 'Why waste processing power on an empty string?');
         return;
     }
-    unCancelSession();
-    if (msg != '') {
-        try {
-            let decoded = msg;
-            if (/^[huHU]+$/.test(msg)) {
-                decoded = decompressFromHuH(msg);
-            }
-            out = CryptoJS.AES.decrypt(decoded, pass).toString(CryptoJS.enc.Utf8);
-            if (!out) {
-                alertMsg("Invalid password mate !", "You frogot it didn't you （︶^︶）");
-                deactivateBtn();
-            } else {
-                activateBtn();
-                animateResult();
-                result.value = out;
-                textAreaResize();
-                c_btn.innerHTML = "copy";
-            }
-        } catch (err) {
-            alertMsg("Error", "An unknown error has occured");
-            deactivateBtn();
-        }
-    } else {
-        alertMsg("Enter something first...", "Why waste processing power on an empty string?")
-    }
-}
+    const key = currentKey('decrypt');
+    if (key === null) return;
 
-var copy_result = async () => {
-    let setCopied = () => {
-        c_btn.innerHTML = "copied";
-        setTimeout(() => { if (c_btn.innerHTML === "copied") c_btn.innerHTML = "copy"; }, 2000);
-    };
-
-    if (window.isSecureContext && navigator.clipboard) {
-        await navigator.clipboard.writeText(result.value);
-        setCopied();
-    } else {
-        alertMsg('Hold up!', "The copy button might not work in this browser setting... Sorry for any inconveniences.");
+    const huh = /^[huHU]+$/.test(msg);
+    // Raw CryptoJS output (the pre-huH format) always starts with "Salted__" in base64.
+    const legacy = !huh && /^U2FsdGVk/.test(msg);
+    let decoded = msg;
+    if (huh) {
         try {
-            result.select();
-            result.setSelectionRange(0, 99999);
-            document.execCommand('copy');
-            setCopied();
-        } catch (err) {
-            console.error('Unable to copy to clipboard', err);
+            decoded = decompressFromHuH(msg);
+        } catch (_) {
+            showError(FACE.huh, 'That isn’t a huH', 'Paste the whole thing. It’s only h, u, H and U.');
+            return;
         }
     }
+
+    let out = '';
+    try {
+        out = CryptoJS.AES.decrypt(decoded, key).toString(CryptoJS.enc.Utf8);
+    } catch (_) {
+        out = '';
+    }
+
+    if (!out) {
+        if (!huh && !legacy) {
+            showError(FACE.huh, 'That isn’t a huH', 'Paste the whole thing. It’s only h, u, H and U.');
+        } else if (mode === 'password') {
+            showError(FACE.grump, 'Invalid password, mate!', 'You frogot it didn’t you.');
+        } else {
+            showError(FACE.grump, 'Session keys don’t match', 'This huH was locked somewhere else. Try editing the session.');
+        }
+        return;
+    }
+    showResult(out, 'plain', mode);
 };
-
-var copy = async (txt, element) => {
-    let setCopied = () => {
-        if (element) {
-            let originalText = element.innerHTML;
-            element.innerHTML = "copied!";
-            setTimeout(() => { element.innerHTML = originalText; }, 2000);
-        }
-    };
-    if (window.isSecureContext && navigator.clipboard) {
-        await navigator.clipboard.writeText(txt);
-        setCopied();
-    } else {
-        alertMsg('Hold up!', "The copy button might not work in this browser setting... Sorry for any inconveniences.");
-        try {
-            let copier = document.getElementById('copy');
-            copier.innerHTML = txt;
-            copier.select();
-            copier.setSelectionRange(0, 99999);
-            document.execCommand('copy');
-            copier.innerHTML = '';
-            setCopied();
-        } catch (err) {
-            console.error('Unable to copy to clipboard', err);
-        }
-    }
-}
 
 const clearText = () => {
-    document.getElementById('text').focus();
-    document.getElementById('text').value = '';
+    textIn.value = '';
+    textIn.focus();
+    clearError();
+    refreshCompose();
 };
 
-addEventListener('resize', () => textAreaResize());
-
+// ---------- Byte helpers ----------
 const Uint8ToString = (u8a) => {
-    var CHUNK_SZ = 0x8000;
-    var c = [];
-    for (var i = 0; i < u8a.length; i += CHUNK_SZ) {
+    const CHUNK_SZ = 0x8000;
+    const c = [];
+    for (let i = 0; i < u8a.length; i += CHUNK_SZ) {
         c.push(String.fromCharCode.apply(null, u8a.subarray(i, i + CHUNK_SZ)));
     }
     return c.join("");
-}
+};
 
 const StringToUnit8 = (base64) => {
     const binaryString = atob(base64);
@@ -329,281 +456,262 @@ const StringToUnit8 = (base64) => {
         bytes[i] = binaryString.charCodeAt(i);
     }
     return bytes.buffer;
-}
+};
 
-// --- PQC: Session dialog ---
-// Opens the "Create / Edit Session" dialog. In edit mode the existing keypair
-// is reused (so the user's public key stays the same), only the other person's
-// pk / CT fields are pre-filled for correction.
+// ---------- Session (pairing) ----------
+const reset_pqc = () => {
+    pkR = skR = myCt = myEncapSs = ss = null;
+    session = false;
+    sessionName = otherPkStored = otherCtStored = null;
+    refreshSessionPanel();
+};
+
+const endSession = () => {
+    reset_pqc();
+    clearError();
+    startPairBtn.focus();
+    announce('Session ended');
+};
+
+// Opens the pairing dialog. In edit mode the existing keypair is reused (so the
+// user's public key stays the same); only the other person's key / reply are
+// pre-filled for correction.
 const createSession = async (isEdit = false) => {
     if (!isEdit) {
+        myCt = myEncapSs = null;
         try {
             [pkR, skR] = await mlkem_generateKeyPair();
         } catch (err) {
-            alertMsg("Key generation failed", err.message || "An error occurred");
+            showError(FACE.dead, 'Key generation failed', err.message || 'An error occurred.');
             return;
         }
     }
-    await openSessionDialog(isEdit);
+    await openPairDialog(isEdit);
 };
 
-const openSessionDialog = (isEdit) => {
+const closeDialog = () => new Promise((resolve) => {
+    if (!dialogEl.open) { resolve(); return; }
+    dialogEl.classList.add('closing');
+    setTimeout(() => {
+        dialogEl.classList.remove('closing');
+        dialogEl.close();
+        document.body.classList.remove('modal-open');
+        resolve();
+    }, 180);
+});
+
+const setCtStatus = (text) => { ctStatus.textContent = text; };
+
+const openPairDialog = (isEdit) => {
     return new Promise((resolve) => {
-        const dialogEl   = document.getElementById("alert-session");
-        const titleEl    = document.getElementById("session-dialog-title");
-        const startBtn   = document.getElementById("session-start-btn");
-        const cancelBtn  = document.getElementById("session-cancel-btn");
-        const otherPkIn  = document.getElementById("session-other-pk");
-        const otherCtIn  = document.getElementById("session-other-ct");
-        const copyPkLink = document.getElementById("copy-pk-link");
-        const copyCtLink = document.getElementById("copy-ct-link");
+        dialogTitle.textContent = isEdit ? 'Edit the session' : 'Pair a session';
+        startBtn.querySelector('span').textContent = isEdit ? 'Update' : 'Pair';
+        clearDialogError();
 
-        titleEl.textContent = isEdit ? "Edit Session" : "Create Session";
-        startBtn.textContent = isEdit ? "Update Session" : "Create Session";
-
-        // Wire up the "copy my public key" link immediately
+        // "Copy my key" is ready immediately
         const myPkB64 = btoa(Uint8ToString(pkR));
-        copyPkLink.onclick = () => copy(myPkB64);
+        copyPkLink.onclick = () => copyText(myPkB64, copyPkLink, showDialogError);
 
         // Pre-fill + reset visibility
-        otherPkIn.type = "password";
-        otherCtIn.type = "password";
+        setVisibility(otherPkIn, false);
+        setVisibility(otherCtIn, false);
         otherPkIn.value = isEdit ? (otherPkStored || '') : '';
         otherCtIn.value = isEdit ? (otherCtStored || '') : '';
 
-        // Restore saved CT link if editing with an existing CT
+        // Restore the saved reply if editing with an existing CT
         const origMyCt      = myCt;
         const origMyEncapSs = myEncapSs;
-        if (isEdit && myCt) {
+        const enableCt = () => {
             const myCtB64 = btoa(Uint8ToString(myCt));
-            copyCtLink.onclick = () => copy(myCtB64);
-            copyCtLink.classList.remove('disable');
-        } else {
-            copyCtLink.classList.add('disable');
+            copyCtLink.onclick = () => copyText(myCtB64, copyCtLink, showDialogError);
+            copyCtLink.disabled = false;
+            setCtStatus('Ready to send');
+        };
+        const disableCt = (status) => {
+            copyCtLink.disabled = true;
             copyCtLink.onclick = null;
-        }
+            setCtStatus(status);
+        };
+        if (isEdit && myCt) enableCt();
+        else disableCt('Needs their key first');
 
-        // Auto-generate CT whenever the other person's pk input changes
+        // Auto-generate the reply (CT) whenever the other person's key changes.
+        // Any reply made for an earlier key is void the moment the key changes,
+        // so Pair's "Not ready yet" guard holds until the new one is ready.
         let ctGenTimer = null;
+        let closed = false;
+        let generation = 0;
         const handlePkInput = () => {
             clearTimeout(ctGenTimer);
-            copyCtLink.classList.add('disable');
-            copyCtLink.onclick = null;
+            clearDialogError();
+            myCt = myEncapSs = null;
             const val = otherPkIn.value.trim();
-            if (!val) return;
+            if (!val) { disableCt('Needs their key first'); return; }
+            disableCt('Generating…');
+            const mine = ++generation;
             ctGenTimer = setTimeout(async () => {
                 try {
                     const otherPk = new Uint8Array(StringToUnit8(val));
                     const [ctBytes, ssBytes] = await mlkem_encap(otherPk);
+                    if (closed || mine !== generation) return; // superseded meanwhile
                     myCt      = ctBytes;
                     myEncapSs = ssBytes;
-                    const myCtB64 = btoa(Uint8ToString(ctBytes));
-                    copyCtLink.onclick = () => copy(myCtB64);
-                    copyCtLink.classList.remove('disable');
-                } catch (_) { /* invalid pk — leave CT disabled */ }
+                    enableCt();
+                } catch (_) {
+                    if (closed || mine !== generation) return;
+                    myCt = myEncapSs = null;
+                    disableCt('That key doesn’t look right');
+                }
             }, 400);
         };
         otherPkIn.addEventListener('input', handlePkInput);
-        // If editing with a stored pk but no CT yet, trigger generation
+        otherCtIn.addEventListener('input', clearDialogError);
+        // If editing with a stored key but no reply yet, generate now
         if (isEdit && otherPkStored && !myCt) handlePkInput();
 
         const cleanup = () => {
+            closed = true;
             startBtn.removeEventListener('click', onStart);
             cancelBtn.removeEventListener('click', onCancel);
+            dialogEl.removeEventListener('cancel', onEsc);
             otherPkIn.removeEventListener('input', handlePkInput);
+            otherCtIn.removeEventListener('input', clearDialogError);
             clearTimeout(ctGenTimer);
         };
 
         const onStart = async () => {
             if (!otherPkIn.value.trim() || !otherCtIn.value.trim()) {
-                hideAlert(dialogEl, () => alertMsg("Missing fields", "Fill in both the other person's public key and their CT."));
-                cleanup();
-                resolve(false);
+                showDialogError(FACE.wave, 'Missing a code', 'Paste both the other person’s key and their reply.');
+                (otherPkIn.value.trim() ? otherCtIn : otherPkIn).focus();
                 return;
             }
             if (!myCt || !myEncapSs) {
-                hideAlert(dialogEl, () => alertMsg("Not ready", "Your CT is still generating — wait a moment after pasting the other's public key."));
-                cleanup();
-                resolve(false);
+                showDialogError(FACE.wave, 'Not ready yet', 'Your reply is still generating. Give it a moment after pasting their key.');
                 return;
             }
             cleanup();
-            hideAlert(dialogEl, async () => {
-                try {
-                    otherPkStored = otherPkIn.value.trim();
-                    otherCtStored = otherCtIn.value.trim();
+            await closeDialog();
+            const prevPk = otherPkStored;
+            const prevCt = otherCtStored;
+            try {
+                otherPkStored = otherPkIn.value.trim();
+                otherCtStored = otherCtIn.value.trim();
 
-                    const otherCtBytes = new Uint8Array(StringToUnit8(otherCtStored));
-                    const myDecapSs    = await mlkem_decap(otherCtBytes, skR);
+                const otherCtBytes = new Uint8Array(StringToUnit8(otherCtStored));
+                const myDecapSs    = await mlkem_decap(otherCtBytes, skR);
 
-                    // XOR is commutative: both parties arrive at the same combined key
-                    const combined = new Uint8Array(myEncapSs.length);
-                    for (let i = 0; i < combined.length; i++) {
-                        combined[i] = myEncapSs[i] ^ myDecapSs[i];
-                    }
-                    ss          = btoa(Uint8ToString(combined));
-                    sessionName = deriveSessionName(combined);
-                    session     = true;
-
-                    updateSessionDisplay();
-                    if (!isEdit) cancelSession();
-                    resolve(true);
-                } catch (err) {
-                    alertMsg("Session error", err.message || "An error occurred. Check the keys and try again.");
-                    resolve(false);
+                // XOR is commutative: both parties arrive at the same combined key
+                const combined = new Uint8Array(myEncapSs.length);
+                for (let i = 0; i < combined.length; i++) {
+                    combined[i] = myEncapSs[i] ^ myDecapSs[i];
                 }
-            });
-        };
+                ss          = btoa(Uint8ToString(combined));
+                sessionName = deriveSessionName(combined);
+                session     = true;
 
-        const onCancel = () => {
-            // Restore CT state if the user changed the pk field then cancelled
-            if (isEdit) {
+                refreshSessionPanel();
+                clearError();
+                sessionNameEl.focus({ preventScroll: true });
+                announce(`Paired as ${sessionName}`);
+                resolve(true);
+            } catch (err) {
+                // Leave whatever was paired before exactly as it was.
+                otherPkStored = prevPk;
+                otherCtStored = prevCt;
                 myCt      = origMyCt;
                 myEncapSs = origMyEncapSs;
+                showError(FACE.dead, 'Pairing failed', err.message || 'Check the codes and try again.');
+                resolve(false);
             }
-            cleanup();
-            hideAlert(dialogEl, () => resolve(false));
         };
 
-        dialogEl.classList.add('appear');
+        const onCancel = async () => {
+            // Restore the reply if the user changed the key field then cancelled;
+            // a fresh attempt leaves nothing behind.
+            myCt      = isEdit ? origMyCt : null;
+            myEncapSs = isEdit ? origMyEncapSs : null;
+            cleanup();
+            await closeDialog();
+            resolve(false);
+        };
+
+        const onEsc = (e) => {
+            e.preventDefault(); // we close with our own animation
+            onCancel();
+        };
+
         startBtn.addEventListener('click', onStart);
         cancelBtn.addEventListener('click', onCancel);
+        dialogEl.addEventListener('cancel', onEsc);
+
+        dialogEl.showModal();
+        document.body.classList.add('modal-open');
+        copyPkLink.focus();
     });
 };
 
-const updateSessionDisplay = () => {
-    const myPkB64  = btoa(Uint8ToString(pkR));
-    const myCtB64  = btoa(Uint8ToString(myCt));
-    document.getElementById('pqc').innerHTML =
-        `Session "<b>${sessionName}</b>"` +
-        `&nbsp;&nbsp;<a href="javascript:void(0);" onclick="copy('${myPkB64}')">copy public key</a>` +
-        `&nbsp;&nbsp;<a href="javascript:void(0);" onclick="copy('${myCtB64}')">copy CT</a>` +
-        `&nbsp;&nbsp;<a href="javascript:void(0);" onclick="editSession()">edit</a>`;
-};
-
-// editSession is called from an inline onclick in updateSessionDisplay
 const editSession = () => createSession(true);
-
-// --- PQC Encrypt / Decrypt ---
-// Once a session is active, both parties share the same ss and can freely
-// encrypt and decrypt with each other — no sender/receiver distinction.
-const encryptAD = async () => {
-    if (!session) {
-        alertMsg("No session", "Create a session first.");
-        return;
-    }
-    const msg = document.getElementById("text").value;
-    if (msg === '') {
-        alertMsg("Enter something first...", "I mean we can encrypt nothing, and that's nothing");
-        return;
-    }
-    const en  = CryptoJS.AES.encrypt(msg, ss);
-    const out = compressToHuH(en.toString());
-    activateBtn();
-    animateResult();
-    result.value = out;
-    textAreaResize();
-    c_btn.innerHTML = "copy";
-};
-
-const decryptAD = async () => {
-    if (!session) {
-        alertMsg("No session", "Create a session first.");
-        return;
-    }
-    const msg = document.querySelector('#text').value;
-    if (msg === '') {
-        alertMsg("Enter something first...", "Why waste processing power on an empty string?");
-        return;
-    }
-    try {
-        let decoded = msg;
-        if (/^[huHU]+$/.test(msg)) {
-            decoded = decompressFromHuH(msg);
-        }
-        const out = CryptoJS.AES.decrypt(decoded, ss).toString(CryptoJS.enc.Utf8);
-        if (!out) {
-            alertMsg("Decryption failed", "Session keys don't match. Try editing the session.");
-            deactivateBtn();
-        } else {
-            activateBtn();
-            animateResult();
-            result.value = out;
-            textAreaResize();
-            c_btn.innerHTML = "copy";
-        }
-    } catch (err) {
-        alertMsg("Error", err.message || "An error occurred during decryption.");
-        deactivateBtn();
-    }
-};
-
-const change_color = () => {
-    let el = document.querySelector('.pass');
-    let p = document.getElementById('pass');
-
-    if (p.value != "") {
-        el.style.boxShadow = "green 0 0 10px";
-        el.style.border = "green 1px solid";
-    }
-    else {
-        el.style.boxShadow = "red 0 0 10px";
-        el.style.border = "red 1px solid";
-    }
-}
-
-const eyeOpen = `
-<img src="./img/eye-open.svg">
-<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="50" cy="50" r="10" fill="transparent" stroke="white">
-        <animate attributeName="r" begin="0" dur="1s" from="0" to="100%"/>
-    </circle>
-</svg>`;
-const eyeClosed = `
-<img src="./img/eye-closed.svg">
-<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="50" cy="50" r="10" fill="transparent" stroke="white">
-        <animate attributeName="r" begin="0" dur="1s" from="0" to="100%"/>
-    </circle>
-</svg>`;
-
-const showPass = (pass, el) => {
-    if (pass.type == "text") {
-        pass.type = "password";
-        el.innerHTML = eyeClosed;
-        el.querySelector('svg').classList.add("password-visibility-change");
-    } else {
-        pass.type = "text";
-        el.innerHTML = eyeOpen;
-        el.querySelector('svg').classList.add("password-visibility-change");
-    }
-}
-
 const startNewSession = () => createSession(false);
 
-const pqcBtn = document.getElementById("pub-key-button");
-pqcBtn.addEventListener('click', startNewSession);
+// ---------- Password visibility ----------
+const setVisibility = (input, shown) => {
+    const btn = document.querySelector(`.pw-toggle[data-for="${input.id}"]`);
+    input.type = shown ? 'text' : 'password';
+    if (!btn) return;
+    // The icons are <svg>, which has no `hidden` property: toggle the attribute.
+    btn.querySelector('.icon-hidden').toggleAttribute('hidden', shown);
+    btn.querySelector('.icon-shown').toggleAttribute('hidden', !shown);
+    const what = btn.dataset.what || 'password';
+    btn.setAttribute('aria-label', (shown ? 'Hide ' : 'Show ') + what);
+};
 
-function unCancelSession() {
-    reset_pqc();
-    pqcBtn.addEventListener('click', startNewSession);
-    pqcBtn.removeEventListener('click', unCancelSession);
-    pqcBtn.innerHTML = "Create Session";
-}
+document.querySelectorAll('.pw-toggle').forEach((btn) => {
+    const input = $(btn.dataset.for);
+    if (!input) return;
+    // Remember the noun from the initial label ("Show password" → "password")
+    btn.dataset.what = (btn.getAttribute('aria-label') || 'Show password').replace(/^Show\s+/i, '');
+    btn.addEventListener('click', () => setVisibility(input, input.type === 'password'));
+});
 
-function cancelSession() {
-    pqcBtn.innerHTML = "Cancel Session";
-    pqcBtn.removeEventListener('click', startNewSession);
-    pqcBtn.addEventListener('click', unCancelSession);
-}
+// ---------- Wiring ----------
+textIn.addEventListener('input', () => { clearError(); refreshCompose(); });
+passIn.addEventListener('input', clearError);
+clearBtn.addEventListener('click', clearText);
 
-// Add bounce effect to all buttons
+modePwBtn.addEventListener('click', () => setMode('password'));
+modeSessBtn.addEventListener('click', () => setMode('session'));
+
+encryptBtn.addEventListener('click', encrypt);
+decryptBtn.addEventListener('click', decrypt);
+
+copyBtn.addEventListener('click', () => copyText(result.value, copyBtn));
+
+copyKeyBtn.addEventListener('click', () => {
+    if (!pkR) return;
+    copyText(btoa(Uint8ToString(pkR)), copyKeyBtn);
+});
+copyReplyBtn.addEventListener('click', () => {
+    if (!myCt) return;
+    copyText(btoa(Uint8ToString(myCt)), copyReplyBtn);
+});
+editSessBtn.addEventListener('click', editSession);
+endSessBtn.addEventListener('click', endSession);
+startPairBtn.addEventListener('click', startNewSession);
+
+addEventListener('resize', () => { if (!resultOut.hidden) resizeResult(); });
+
+// Click bounce on every button
 document.querySelectorAll('button').forEach(btn => {
-    btn.addEventListener('click', function(e) {
-        if (!this.classList.contains('disable')) {
-            this.classList.remove('bounce-anim');
-            void this.offsetWidth; // Trigger reflow
-            this.classList.add('bounce-anim');
-        }
+    btn.addEventListener('click', function () {
+        if (this.disabled) return;
+        this.classList.remove('bounce-anim');
+        void this.offsetWidth; // restart the animation
+        this.classList.add('bounce-anim');
     });
 });
+
+// ---------- Init ----------
+setMode('password');
+refreshCompose();
+refreshSessionPanel();
+textIn.focus({ preventScroll: true });

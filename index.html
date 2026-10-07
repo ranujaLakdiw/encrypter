@@ -1,114 +1,241 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
 
 <head>
-    <!-- <script>
-        if (!window.isSecureContext)
-            window.location.replace('https://lakdiw.com/encrypter');
-    </script> -->
     <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Encrpyter</title>
+    <meta name="color-scheme" content="dark">
+    <title>Huh encrypter</title>
+    <meta name="description" content="Lock messages into huH with a shared password or a post-quantum session. ML-KEM-1024 + AES-256, entirely in your browser.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
     <link rel="stylesheet" href="./style_2.css" type="text/css">
     <link rel="icon" type="image/png" href="./img/logo.png" />
 </head>
 
 <body>
 
-
+    <!-- Icon sprite: referenced below with <use href="#i-…"> -->
+    <svg aria-hidden="true" width="0" height="0" style="position:absolute">
+        <defs>
+            <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"></circle><path d="M10.8 12.2 20 3"></path><path d="M16.5 6.5l3 3"></path><path d="M14 9l2 2"></path></symbol>
+            <symbol id="i-session" viewBox="0 0 24 24"><path d="M4 8h14"></path><path d="M15 5l3 3-3 3"></path><path d="M20 16H6"></path><path d="M9 13l-3 3 3 3"></path></symbol>
+            <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M3 10c2.4 3 5.4 4.5 9 4.5s6.6-1.5 9-4.5"></path><path d="M6.2 13.2 4.6 15.6"></path><path d="M12 14.5v2.8"></path><path d="M17.8 13.2l1.6 2.4"></path></symbol>
+            <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"></path><circle cx="12" cy="12" r="3"></circle></symbol>
+            <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5"></rect><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15"></path></symbol>
+            <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"></rect><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"></path></symbol>
+            <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"></rect><path d="M8 10.5V7.5a4 4 0 0 1 7.6-1.8"></path></symbol>
+            <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></symbol>
+        </defs>
+    </svg>
 
     <!-- particles.js container -->
-    <div id="particles-js"></div>
-    <div id="alert">
-        <div class="alert-box">
-            <p class="head"><u>ALERT</u>ヾ( ■_■)ノ♪</p>
-            <div class="body">
-                <p class="body_1"></p>
-                <p class="body_2"></p>
+    <div id="particles-js" aria-hidden="true"></div>
+
+    <div class="page">
+        <header class="topbar">
+            <div class="brand">
+                <img src="./img/logo.png" alt="Huh" width="56" height="56" class="brand-logo">
+                <h1 class="eyebrow brand-name">encrypter</h1>
             </div>
-            <button>OK</button>
-        </div>
-    </div>
-    <div id="alert-session">
-        <div class="alert-box session-box">
-            <p id="session-dialog-title">Create Session</p>
-            <div class="session-steps">
-                <div class="session-step">
-                    <p>1. Copy your public key and send it to the other person:</p>
-                    <a id="copy-pk-link" href="javascript:void(0);">copy public key</a>
+            <p class="tagline mono">ML-KEM-1024 + AES-256 · runs entirely in your browser</p>
+        </header>
+
+        <main class="layout">
+
+            <!-- ───────── Compose ───────── -->
+            <section class="compose card" aria-label="Compose">
+
+                <div class="field">
+                    <div class="field-head">
+                        <div class="field-label-row">
+                            <label for="text" class="eyebrow">Message</label>
+                            <span id="huh-chip" class="chip mono" hidden>huH detected</span>
+                        </div>
+                        <button type="button" id="clear" class="btn btn-ghost">Clear</button>
+                    </div>
+                    <textarea id="text" rows="7" placeholder="Type a message, or paste a huH to read it" spellcheck="false"></textarea>
                 </div>
-                <div class="session-step">
-                    <p>2. Paste the other person's public key:</p>
-                    <div class="session-input-row">
-                        <input type="password" id="session-other-pk" />
-                        <a href="javascript:void(0);" class="password-visibility"
-                            onclick="showPass(document.getElementById('session-other-pk'), this)">
-                            <img src="./img/eye-closed.svg" />
-                        </a>
+
+                <div class="field">
+                    <span id="mode-label" class="eyebrow">Encrypt with</span>
+                    <div role="group" aria-labelledby="mode-label" class="segmented">
+                        <button type="button" id="mode-password" class="seg" aria-pressed="true">
+                            <svg aria-hidden="true" class="icon"><use href="#i-key"></use></svg><span>Password</span>
+                        </button>
+                        <button type="button" id="mode-session" class="seg" aria-pressed="false">
+                            <svg aria-hidden="true" class="icon"><use href="#i-session"></use></svg><span>Session</span>
+                        </button>
                     </div>
                 </div>
-                <div class="session-step">
-                    <p>3. Copy your CT and send it to the other person:</p>
-                    <a id="copy-ct-link" href="javascript:void(0);" class="disable">copy CT</a>
-                    <span id="ct-status"></span>
+
+                <!-- Password mode -->
+                <div id="panel-password" class="field">
+                    <label for="pass" class="eyebrow">Shared password</label>
+                    <div class="pw-wrap">
+                        <input id="pass" type="password" autocomplete="off" spellcheck="false" placeholder="The one you both know">
+                        <button type="button" class="pw-toggle" data-for="pass" aria-label="Show password">
+                            <svg aria-hidden="true" class="icon icon-hidden"><use href="#i-eye-off"></use></svg>
+                            <svg aria-hidden="true" class="icon icon-shown" hidden><use href="#i-eye"></use></svg>
+                        </button>
+                    </div>
+                    <p class="hint">They’ll need this exact password to read it.</p>
                 </div>
-                <div class="session-step">
-                    <p>4. Paste the other person's CT:</p>
-                    <div class="session-input-row">
-                        <input type="password" id="session-other-ct" />
-                        <a href="javascript:void(0);" class="password-visibility"
-                            onclick="showPass(document.getElementById('session-other-ct'), this)">
-                            <img src="./img/eye-closed.svg" />
-                        </a>
+
+                <!-- Session mode -->
+                <div id="panel-session" hidden>
+                    <div id="session-on" class="session-card" hidden>
+                        <div class="session-head">
+                            <div class="session-name">
+                                <span class="dot" aria-hidden="true"></span>
+                                <span id="session-name" class="mono" tabindex="-1">—</span>
+                            </div>
+                            <span class="meta mono">paired<span class="label-long"> · ML-KEM-1024</span></span>
+                        </div>
+                        <p class="note">You should both see this exact name. If theirs is different, edit the session.</p>
+                        <div class="session-actions">
+                            <button type="button" id="copy-key" class="btn btn-soft" aria-label="Copy my key">
+                                <svg aria-hidden="true" class="icon"><use href="#i-copy"></use></svg><span class="label-long">Copy my key</span><span class="label-short">Key</span>
+                            </button>
+                            <button type="button" id="copy-reply" class="btn btn-soft" aria-label="Copy my reply">
+                                <svg aria-hidden="true" class="icon"><use href="#i-copy"></use></svg><span class="label-long">Copy my reply</span><span class="label-short">Reply</span>
+                            </button>
+                            <button type="button" id="edit-session" class="btn btn-soft"><span>Edit</span></button>
+                            <button type="button" id="end-session" class="btn btn-danger" aria-label="End session"><span class="label-long">End session</span><span class="label-short">End</span></button>
+                        </div>
+                    </div>
+                    <div id="session-off" class="session-empty">
+                        <p class="session-empty-title">Not paired yet</p>
+                        <p class="note">Swap two codes with the other person once. After that you can both lock and unlock messages, no password needed.</p>
+                        <button type="button" id="start-pairing" class="btn btn-accent-outline">
+                            <span>Start pairing</span><svg aria-hidden="true" class="icon"><use href="#i-arrow"></use></svg>
+                        </button>
                     </div>
                 </div>
-            </div>
-            <button id="session-start-btn">Create Session</button>
-            <button id="session-cancel-btn">Cancel</button>
-        </div>
-    </div>
-    <div class="App">
-        <header class="App-header">
-            <p>
-                Type the message in the below text box
-            </p>
-        </header>
-        <div class="box">
-            <textarea id='text' rows="10" cols="10"></textarea>
-            <div class="pqc-wrap">
-                <p id="pqc"></p>
-            </div>
-            <div class="pass">
-                <p>
-                    Enter a password here (or use PQC key):
-                </p>
-                <div class="pass-input-box">
-                    <input id='pass' onkeyup="change_color()" type="password" class="password" />
-                    <a href="javascript:void(0);" class="password-visibility"
-                        onclick="showPass(document.getElementById('pass'), this)">
-                        <img src="./img/eye-closed.svg" />
-                    </a>
+
+                <div class="actions">
+                    <button type="button" id="encrypt-btn" class="btn btn-big btn-primary">
+                        <svg aria-hidden="true" class="icon"><use href="#i-lock"></use></svg><span>Encrypt</span>
+                    </button>
+                    <button type="button" id="decrypt-btn" class="btn btn-big btn-secondary">
+                        <svg aria-hidden="true" class="icon"><use href="#i-unlock"></use></svg><span>Decrypt</span>
+                    </button>
                 </div>
-            </div>
-            <div class='buttons'>
-                <button onclick="encrypt()">Encrypt</button>
-                <button onclick="decrypt()">Decrypt</button>
-                <button id="pub-key-button">Create Session</button>
-            </div>
-        </div>
 
-        <header class="App-header">
-            <p>
-                The converted message will appear below
-            </p>
-        </header>
-        <button onclick="copy_result()" id="copy-btn" class="disable">copy</button>
-        <div class="box result">
-            <textarea id="result" readonly></textarea>
-        </div>
+                <div id="error" class="error" role="alert" hidden>
+                    <span class="face mono" aria-hidden="true"></span>
+                    <div class="error-text">
+                        <p class="error-title"></p>
+                        <p class="error-body"></p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ───────── Result ───────── -->
+            <section class="result" aria-labelledby="result-label">
+                <div class="result-head">
+                    <h2 id="result-label" class="eyebrow">Result</h2>
+                    <span id="result-meta" class="meta mono"></span>
+                    <span id="result-meta-phone" class="meta mono"></span>
+                </div>
+
+                <div id="result-out" hidden>
+                    <div class="bubble-wrap">
+                        <div class="bubble">
+                            <textarea id="result" rows="1" readonly aria-label="Result" spellcheck="false"></textarea>
+                        </div>
+                        <svg aria-hidden="true" class="bubble-tail" width="46" height="34" viewBox="0 0 46 34"><path d="M6 0H40C30 9 20 20 3 33C9 22 10 10 6 0Z"></path></svg>
+                    </div>
+                    <div class="result-actions">
+                        <button type="button" id="copy-btn" class="btn btn-light">
+                            <svg aria-hidden="true" class="icon"><use href="#i-copy"></use></svg><span id="copy-label">Copy huH</span>
+                        </button>
+                        <span id="locked-with" class="meta mono"></span>
+                    </div>
+                </div>
+
+                <div id="result-empty" class="bubble-empty">
+                    <p class="bubble-empty-title">Your huH lands here</p>
+                    <p>Encrypt a message and it turns into a speech bubble you can paste anywhere.</p>
+                </div>
+            </section>
+
+        </main>
     </div>
 
-    <button id="clear" onclick="clearText()">clear</button>
+    <!-- ───────── Pairing dialog ───────── -->
+    <dialog id="pair-dialog" class="dialog" aria-labelledby="pair-title" aria-describedby="pair-desc">
+        <div class="dialog-head">
+            <h2 id="pair-title">Pair a session</h2>
+            <p id="pair-desc" class="note">Trade two codes with the other person. Nothing leaves this browser except what you copy.</p>
+        </div>
+        <ol class="steps">
+            <li class="step">
+                <span class="step-n mono" aria-hidden="true">1</span>
+                <div class="step-body">
+                    <p class="step-label">Send them your key</p>
+                    <div class="step-row">
+                        <button type="button" id="copy-pk-link" class="btn btn-soft">
+                            <svg aria-hidden="true" class="icon"><use href="#i-copy"></use></svg><span>Copy my key</span>
+                        </button>
+                    </div>
+                </div>
+            </li>
+            <li class="step">
+                <span class="step-n mono" aria-hidden="true">2</span>
+                <div class="step-body">
+                    <label for="session-other-pk" class="step-label">Paste their key</label>
+                    <div class="pw-wrap">
+                        <input id="session-other-pk" type="password" autocomplete="off" spellcheck="false" placeholder="Their key">
+                        <button type="button" class="pw-toggle" data-for="session-other-pk" aria-label="Show their key">
+                            <svg aria-hidden="true" class="icon icon-hidden"><use href="#i-eye-off"></use></svg>
+                            <svg aria-hidden="true" class="icon icon-shown" hidden><use href="#i-eye"></use></svg>
+                        </button>
+                    </div>
+                </div>
+            </li>
+            <li class="step">
+                <span class="step-n mono" aria-hidden="true">3</span>
+                <div class="step-body">
+                    <p class="step-label">Send them your reply</p>
+                    <div class="step-row">
+                        <button type="button" id="copy-ct-link" class="btn btn-soft" disabled>
+                            <svg aria-hidden="true" class="icon"><use href="#i-copy"></use></svg><span>Copy my reply</span>
+                        </button>
+                        <span id="ct-status" class="meta mono" aria-live="polite">Needs their key first</span>
+                    </div>
+                </div>
+            </li>
+            <li class="step">
+                <span class="step-n mono" aria-hidden="true">4</span>
+                <div class="step-body">
+                    <label for="session-other-ct" class="step-label">Paste their reply</label>
+                    <div class="pw-wrap">
+                        <input id="session-other-ct" type="password" autocomplete="off" spellcheck="false" placeholder="Their reply">
+                        <button type="button" class="pw-toggle" data-for="session-other-ct" aria-label="Show their reply">
+                            <svg aria-hidden="true" class="icon icon-hidden"><use href="#i-eye-off"></use></svg>
+                            <svg aria-hidden="true" class="icon icon-shown" hidden><use href="#i-eye"></use></svg>
+                        </button>
+                    </div>
+                </div>
+            </li>
+        </ol>
+        <div id="dialog-error" class="error" role="alert" hidden>
+            <span class="face mono" aria-hidden="true"></span>
+            <div class="error-text">
+                <p class="error-title"></p>
+                <p class="error-body"></p>
+            </div>
+        </div>
+        <div class="dialog-actions">
+            <button type="button" id="session-cancel-btn" class="btn btn-secondary"><span>Cancel</span></button>
+            <button type="button" id="session-start-btn" class="btn btn-primary"><span>Pair</span></button>
+        </div>
+    </dialog>
+
+    <!-- Polite status line for screen readers (copied, paired, ended) -->
+    <div id="sr-status" class="sr-only" role="status" aria-live="polite"></div>
 
     <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
     <script src="./particles.js"></script>
@@ -133,9 +260,6 @@
         };
     </script>
     <script src="./app_2.js"></script>
-
-
-
 
 </body>
 

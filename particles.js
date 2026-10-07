@@ -1,4 +1,7 @@
 // Particle JS
+// With "reduce motion" switched on, the constellation is drawn once and holds still.
+var reduceMotion = false;
+try { reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
 particlesJS("particles-js", {
     "particles": {
         "number": {
@@ -54,7 +57,7 @@ particlesJS("particles-js", {
             "width": 1
         },
         "move": {
-            "enable": true,
+            "enable": !reduceMotion,
             "speed": 6,
             "direction": "none",
             "random": false,
