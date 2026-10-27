@@ -27,6 +27,10 @@
             <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"></rect><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"></path></symbol>
             <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"></rect><path d="M8 10.5V7.5a4 4 0 0 1 7.6-1.8"></path></symbol>
             <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></symbol>
+            <symbol id="i-clip" viewBox="0 0 24 24"><path d="M20.3 11.6l-7.6 7.6a5 5 0 0 1-7.1-7.1l8.3-8.3a3.2 3.2 0 0 1 4.5 4.5l-8.3 8.3a1.5 1.5 0 0 1-2.1-2.1l7.6-7.6"></path></symbol>
+            <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11"></path><path d="M7.5 10.5 12 15l4.5-4.5"></path><path d="M5 19.5h14"></path></symbol>
+            <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12"></path><path d="M18 6 6 18"></path></symbol>
+            <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3.5h7l5 5V20a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20V5A1.5 1.5 0 0 1 7 3.5z"></path><path d="M14 3.5V9h5"></path></symbol>
         </defs>
     </svg>
 
@@ -53,9 +57,30 @@
                             <label for="text" class="eyebrow">Message</label>
                             <span id="huh-chip" class="chip mono" hidden>huH detected</span>
                         </div>
-                        <button type="button" id="clear" class="btn btn-ghost">Clear</button>
+                        <div class="field-actions">
+                            <button type="button" id="attach-btn" class="btn btn-ghost">
+                                <svg aria-hidden="true" class="icon"><use href="#i-clip"></use></svg><span>Attach</span>
+                            </button>
+                            <input type="file" id="file-input" hidden aria-label="Attach a file">
+                            <button type="button" id="clear" class="btn btn-ghost">Clear</button>
+                        </div>
                     </div>
-                    <textarea id="text" rows="7" placeholder="Type a message, or paste a huH to read it" spellcheck="false"></textarea>
+                    <textarea id="text" rows="7" placeholder="Type a message, paste a huH to read it, or drop a file here" spellcheck="false"></textarea>
+                    <!-- Attached file: takes the message box's place (toggled by app_2.js) -->
+                    <div id="attach-card" class="attach-card" hidden>
+                        <img id="attach-thumb" class="attach-thumb" alt="" hidden>
+                        <div id="attach-glyph" class="attach-glyph mono" aria-hidden="true">
+                            <span id="attach-glyph-text">huH</span>
+                            <svg class="icon" id="attach-glyph-icon" hidden><use href="#i-file"></use></svg>
+                        </div>
+                        <div class="attach-info">
+                            <p id="attach-name" class="attach-name"></p>
+                            <p id="attach-meta" class="meta mono"></p>
+                        </div>
+                        <button type="button" id="attach-remove" class="btn btn-ghost" aria-label="Remove file">
+                            <svg aria-hidden="true" class="icon"><use href="#i-x"></use></svg>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="field">
@@ -144,20 +169,39 @@
                     <div class="bubble-wrap">
                         <div class="bubble">
                             <textarea id="result" rows="1" readonly aria-label="Result" spellcheck="false"></textarea>
+                            <!-- File result: shown instead of the text (toggled by app_2.js) -->
+                            <div id="file-card" class="file-card" hidden>
+                                <img id="file-preview" class="file-preview" alt="Unlocked image" hidden>
+                                <div class="file-row">
+                                    <div id="file-glyph" class="file-glyph mono" aria-hidden="true">
+                                        <span id="file-glyph-text">huH</span>
+                                        <svg class="icon" id="file-glyph-icon" hidden><use href="#i-file"></use></svg>
+                                    </div>
+                                    <div class="file-info">
+                                        <p id="file-name" class="file-name"></p>
+                                        <p id="file-size" class="file-size mono"></p>
+                                    </div>
+                                </div>
+                                <p id="file-sample" class="file-sample mono" aria-hidden="true"></p>
+                            </div>
                         </div>
                         <svg aria-hidden="true" class="bubble-tail" width="46" height="34" viewBox="0 0 46 34"><path d="M6 0H40C30 9 20 20 3 33C9 22 10 10 6 0Z"></path></svg>
                     </div>
                     <div class="result-actions">
+                        <button type="button" id="save-btn" class="btn btn-light" hidden>
+                            <svg aria-hidden="true" class="icon"><use href="#i-download"></use></svg><span id="save-label">Save .huh</span>
+                        </button>
                         <button type="button" id="copy-btn" class="btn btn-light">
                             <svg aria-hidden="true" class="icon"><use href="#i-copy"></use></svg><span id="copy-label">Copy huH</span>
                         </button>
                         <span id="locked-with" class="meta mono"></span>
+                        <span id="result-more" class="meta mono" hidden>copy grabs all of it</span>
                     </div>
                 </div>
 
                 <div id="result-empty" class="bubble-empty">
                     <p class="bubble-empty-title">Your huH lands here</p>
-                    <p>Encrypt a message and it turns into a speech bubble you can paste anywhere.</p>
+                    <p>Encrypt a message and it turns into a speech bubble you can paste anywhere. Attach a file or an image and it becomes a .huh you can send.</p>
                 </div>
             </section>
 

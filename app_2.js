@@ -3,6 +3,8 @@
 // Crypto: AES (crypto-js) with either a shared password or an
 // ML-KEM-1024 session secret. Output is "huH": base-3 text over
 // the alphabet h / u / H, chunks joined with U.
+// Files and images go through the same pipe: their bytes (plus a
+// small name/type header) are AES-encrypted and packed into a .huh.
 // ─────────────────────────────────────────────────────────────
 
 const code = ['h', 'u', 'H'];
@@ -67,6 +69,30 @@ const result       = $('result');
 const copyBtn      = $('copy-btn');
 const copyLabel    = $('copy-label');
 const lockedWith   = $('locked-with');
+const resultMore   = $('result-more');
+const bubble       = result.closest('.bubble');
+const saveBtn      = $('save-btn');
+const saveLabel    = $('save-label');
+const fileCard     = $('file-card');
+const filePreview  = $('file-preview');
+const fileGlyph    = $('file-glyph');
+const fileGlyphText = $('file-glyph-text');
+const fileGlyphIcon = $('file-glyph-icon');
+const fileNameEl   = $('file-name');
+const fileSizeEl   = $('file-size');
+const fileSample   = $('file-sample');
+
+const composeEl    = document.querySelector('.compose');
+const attachBtn    = $('attach-btn');
+const fileInput    = $('file-input');
+const attachCard   = $('attach-card');
+const attachThumb  = $('attach-thumb');
+const attachGlyph  = $('attach-glyph');
+const attachGlyphText = $('attach-glyph-text');
+const attachGlyphIcon = $('attach-glyph-icon');
+const attachName   = $('attach-name');
+const attachMeta   = $('attach-meta');
+const attachRemove = $('attach-remove');
 
 const dialogEl     = $('pair-dialog');
 const dialogTitle  = $('pair-title');
@@ -82,7 +108,21 @@ const srStatus     = $('sr-status');
 
 // ---------- UI state ----------
 var mode = 'password';   // 'password' | 'session'
-var resultKind = null;   // 'huh' | 'plain' | null
+var resultKind = null;   // 'huh' | 'plain' | 'huh-file' | 'file' | null
+var resultText = null;   // what "Copy" copies (huH or plain text)
+var resultBlob = null;   // what "Save" downloads (a .huh, or the unlocked file)
+var resultName = null;   // its filename
+var previewUrl = null;   // object URL behind the unlocked-image preview
+
+// Attached file waiting in the compose box.
+// kind 'file' → will be locked into a .huh; kind 'huh' → a .huh to unlock (text holds it).
+var attached  = null;    // { file, kind, text } | null
+var attachUrl = null;    // object URL behind the attachment thumbnail
+
+// huH is 5.25× the size of what goes in, and the whole run happens in memory
+// in plain JavaScript, so files are capped where it still feels snappy.
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_HUH_BYTES  = 6 * MAX_FILE_BYTES;
 
 const FACE = {
     alarm: 'ヾ( ■_■)ノ♪',
@@ -135,9 +175,12 @@ const alertMsg = (title, body) => showError(FACE.alarm, title, body);
 
 // ---------- Compose state ----------
 const refreshCompose = () => {
-    const huh = isHuhText(textIn.value);
+    const huh = attached ? attached.kind === 'huh' : isHuhText(textIn.value);
     huhChip.hidden = !huh;
-    textIn.classList.toggle('huh', huh);
+    huhChip.textContent = attached ? 'huH file' : 'huH detected';
+    textIn.hidden = !!attached;
+    attachCard.hidden = !attached;
+    textIn.classList.toggle('huh', !attached && huh);
     modeLabel.textContent = huh ? 'Decrypt with' : 'Encrypt with';
     encryptBtn.classList.toggle('btn-primary', !huh);
     encryptBtn.classList.toggle('btn-secondary', huh);
@@ -163,32 +206,131 @@ const setMode = (m) => {
 };
 
 // ---------- Result ----------
-const resizeResult = () => {
-    result.style.height = '1px';
-    result.style.height = result.scrollHeight + 'px';
+// A long result is capped (--result-max in the stylesheet) and scrolls inside
+// the bubble, under a fade that lifts once it's scrolled to the end.
+const updateResultFade = () => {
+    const atEnd = result.scrollTop + result.clientHeight >= result.scrollHeight - 2;
+    bubble.classList.toggle('at-end', atEnd);
 };
 
-const showResult = (value, kind, via) => {
-    resultKind = kind;
-    result.value = value;
-    result.classList.toggle('huh', kind === 'huh');
+const resizeResult = () => {
+    bubble.classList.remove('clamped');
+    result.style.height = '1px';
+    result.style.height = result.scrollHeight + 'px';
+    const clamped = result.scrollHeight > result.clientHeight + 1;
+    bubble.classList.toggle('clamped', clamped);
+    // Width a classic scrollbar takes, so the fade stops short of it.
+    bubble.style.setProperty('--sb', (result.offsetWidth - result.clientWidth) + 'px');
+    resultMore.hidden = !clamped;
+    updateResultFade();
+};
+
+const fmtSize = (n) => {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+// Shared result plumbing: header line, "locked with…" meta, pop animation.
+const beginResult = (locked, via, meta) => {
     resultOut.hidden = false;
     resultEmpty.hidden = true;
+    if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
+    resultText = resultBlob = resultName = null;
 
-    const locked = kind === 'huh';
     resultLabel.textContent = locked ? 'Locked · ready to send' : 'Unlocked';
-    resultMeta.textContent = locked ? `${value.length} chars of huh` : `${value.length} chars`;
+    resultMeta.textContent = meta;
     const viaText = via === 'session' ? `in ${sessionName}` : 'with a password';
-    cancelFlash(copyBtn);
-    copyLabel.textContent = locked ? 'Copy huH' : 'Copy text';
     lockedWith.textContent = (locked ? 'locked ' : 'unlocked ') + viaText;
     resultMetaPhone.textContent = viaText;
+    cancelFlash(copyBtn);
+    cancelFlash(saveBtn);
+    bubble.classList.remove('clamped', 'at-end');
+    resultMore.hidden = true;
 
     clearError();
-    resizeResult();
     resultOut.classList.remove('pop');
     void resultOut.offsetWidth;
     resultOut.classList.add('pop');
+};
+
+const showResult = (value, kind, via) => {
+    const locked = kind === 'huh';
+    beginResult(locked, via, locked ? `${value.length} chars of huh` : `${value.length} chars`);
+    resultKind = kind;
+    resultText = value;
+    result.value = value;
+    result.classList.toggle('huh', locked);
+    result.hidden = false;
+    fileCard.hidden = true;
+    saveBtn.hidden = true;
+    copyBtn.hidden = false;
+    copyLabel.textContent = locked ? 'Copy huH' : 'Copy text';
+    result.scrollTop = 0;
+    resizeResult();
+};
+
+// Fills the file card that sits in the bubble instead of the text.
+const fillFileCard = ({ name, size, glyph, preview }) => {
+    result.hidden = true;
+    fileCard.hidden = false;
+    fileNameEl.textContent = name;
+    fileSizeEl.textContent = size;
+    fileGlyph.hidden = !!preview;
+    fileGlyphText.hidden = glyph !== 'huH';
+    fileGlyphIcon.toggleAttribute('hidden', glyph !== 'file');
+    filePreview.hidden = !preview;
+    if (preview) filePreview.src = preview;
+    else filePreview.removeAttribute('src');
+};
+
+// A file locked into huH: offer it as a .huh to save (or copy, for small ones).
+const showHuhFileResult = (huh, name, via) => {
+    const size = `${fmtSize(huh.length)} of huH`;
+    beginResult(true, via, size);
+    resultKind = 'huh-file';
+    resultText = huh;
+    resultBlob = new Blob([huh], { type: 'text/plain;charset=utf-8' });
+    resultName = name;
+    fillFileCard({ name, size, glyph: 'huH', preview: null });
+    fileSample.hidden = false;
+    fileSample.textContent = huh.slice(0, 120) + (huh.length > 120 ? '…' : '');
+    saveBtn.hidden = false;
+    saveLabel.textContent = 'Save .huh';
+    copyBtn.hidden = false;
+    copyLabel.textContent = 'Copy huH';
+    announce(`Locked ${name}`);
+};
+
+// A huH that unlocked into a file: rebuild it and offer it back.
+const showUnlockedFileResult = ({ name, type, bytes }, via) => {
+    const safeName = (name || 'file').replace(/[\/\\]/g, '_');
+    const mime = type || 'application/octet-stream';
+    const isImage = /^image\//.test(mime);
+    const size = `${fmtSize(bytes.length)} · ${mime}`;
+    beginResult(false, via, size);
+    resultKind = 'file';
+    resultBlob = new Blob([bytes], { type: mime });
+    resultName = safeName;
+    if (isImage) previewUrl = URL.createObjectURL(resultBlob);
+    fillFileCard({ name: safeName, size, glyph: 'file', preview: previewUrl });
+    fileSample.hidden = true;
+    saveBtn.hidden = false;
+    saveLabel.textContent = isImage ? 'Save image' : 'Save file';
+    copyBtn.hidden = true;
+    announce(`Unlocked ${safeName}`);
+};
+
+const downloadBlob = (blob, name) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.hidden = true;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
 };
 
 // ---------- Clipboard ----------
@@ -274,15 +416,17 @@ const getPower = (num) => {
     }
 };
 
+// Base-3 digits, most significant first, no leading zeros (so to(0) is '').
+// The digit is floored as a number: parseInt on the ratio would read a tiny
+// remainder such as 2e-7 through its exponential string form and return 2.
 const to = (i) => {
     let p = getPower(i);
     let out = '';
     while (p >= 0) {
-        let x = parseInt(i / 3 ** p);
-        if (0 <= x) {
-            out = out + code[x];
-            i = i - (x * 3 ** p);
-        }
+        const step = 3 ** p;
+        const x = Math.floor(i / step);
+        out += code[x];
+        i -= x * step;
         p--;
     }
     return out;
@@ -371,7 +515,8 @@ const currentKey = (verb) => {
     return ss;
 };
 
-const encrypt = () => {
+const encrypt = async () => {
+    if (attached) { await encryptAttached(); return; }
     const msg = textIn.value;
     if (!msg.trim()) {
         textIn.focus();
@@ -388,12 +533,41 @@ const encrypt = () => {
     }
 };
 
-const decrypt = () => {
-    const msg = textIn.value.trim();
-    if (!msg) {
-        textIn.focus();
-        showError(FACE.alarm, 'Enter something first…', 'Why waste processing power on an empty string?');
-        return;
+// Locks the attached file: header + bytes → AES → huH → a .huh to save.
+// The bytes go to AES as they are; base64 first would only make the huH bigger.
+const encryptAttached = async () => {
+    const key = currentKey('encrypt');
+    if (key === null) return;
+    const { file } = attached;
+    setWorking(encryptBtn, 'Locking…');
+    await nextPaint();
+    try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const plain = packFile(bytes, file.name, file.type);
+        const en = CryptoJS.AES.encrypt(bytesToWordArray(plain), key);
+        showHuhFileResult(compressToHuH(en.toString()), `${file.name}.huh`, mode);
+    } catch (err) {
+        showError(FACE.dead, 'Something went wrong', err.message || 'An unknown error occurred.');
+    } finally {
+        clearWorking(encryptBtn);
+    }
+};
+
+const decrypt = async () => {
+    let msg;
+    if (attached) {
+        if (attached.kind !== 'huh') {
+            showError(FACE.huh, 'That isn’t a huH', 'Only a .huh can be unlocked. Hit Encrypt to lock this file instead.');
+            return;
+        }
+        msg = attached.text;
+    } else {
+        msg = textIn.value.trim();
+        if (!msg) {
+            textIn.focus();
+            showError(FACE.alarm, 'Enter something first…', 'Why waste processing power on an empty string?');
+            return;
+        }
     }
     const key = currentKey('decrypt');
     if (key === null) return;
@@ -401,37 +575,59 @@ const decrypt = () => {
     const huh = /^[huHU]+$/.test(msg);
     // Raw CryptoJS output (the pre-huH format) always starts with "Salted__" in base64.
     const legacy = !huh && /^U2FsdGVk/.test(msg);
-    let decoded = msg;
-    if (huh) {
+    // File-sized huHs take a moment; say so on the button while they run.
+    const heavy = msg.length > 200000;
+    if (heavy) { setWorking(decryptBtn, 'Unlocking…'); await nextPaint(); }
+    try {
+        let decoded = msg;
+        if (huh) {
+            try {
+                decoded = decompressFromHuH(msg);
+            } catch (_) {
+                showError(FACE.huh, 'That isn’t a huH', 'Paste the whole thing. It’s only h, u, H and U.');
+                return;
+            }
+        }
+
+        let words = null;
         try {
-            decoded = decompressFromHuH(msg);
+            words = CryptoJS.AES.decrypt(decoded, key);
         } catch (_) {
-            showError(FACE.huh, 'That isn’t a huH', 'Paste the whole thing. It’s only h, u, H and U.');
+            words = null;
+        }
+
+        let out = '';
+        if (words && words.sigBytes > 0) {
+            // A file payload starts with NUL, which typed text never does.
+            if (words.sigBytes > FILE_MAGIC.length && (words.words[0] >>> 24) === 0) {
+                const file = unpackFile(wordArrayToBytes(words));
+                if (file) { showUnlockedFileResult(file, mode); return; }
+            }
+            try {
+                out = CryptoJS.enc.Utf8.stringify(words);
+            } catch (_) {
+                out = '';
+            }
+        }
+
+        if (!out) {
+            if (!huh && !legacy) {
+                showError(FACE.huh, 'That isn’t a huH', 'Paste the whole thing. It’s only h, u, H and U.');
+            } else if (mode === 'password') {
+                showError(FACE.grump, 'Invalid password, mate!', 'You frogot it didn’t you.');
+            } else {
+                showError(FACE.grump, 'Session keys don’t match', 'This huH was locked somewhere else. Try editing the session.');
+            }
             return;
         }
+        showResult(out, 'plain', mode);
+    } finally {
+        if (heavy) clearWorking(decryptBtn);
     }
-
-    let out = '';
-    try {
-        out = CryptoJS.AES.decrypt(decoded, key).toString(CryptoJS.enc.Utf8);
-    } catch (_) {
-        out = '';
-    }
-
-    if (!out) {
-        if (!huh && !legacy) {
-            showError(FACE.huh, 'That isn’t a huH', 'Paste the whole thing. It’s only h, u, H and U.');
-        } else if (mode === 'password') {
-            showError(FACE.grump, 'Invalid password, mate!', 'You frogot it didn’t you.');
-        } else {
-            showError(FACE.grump, 'Session keys don’t match', 'This huH was locked somewhere else. Try editing the session.');
-        }
-        return;
-    }
-    showResult(out, 'plain', mode);
 };
 
 const clearText = () => {
+    detachFile();
     textIn.value = '';
     textIn.focus();
     clearError();
@@ -457,6 +653,133 @@ const StringToUnit8 = (base64) => {
     }
     return bytes.buffer;
 };
+
+// CryptoJS 3.1.2 (the AES rollup the page loads) has no typed-array support,
+// so file bytes cross into and out of its WordArray format by hand.
+const bytesToWordArray = (u8) => {
+    const len = u8.length;
+    const words = new Array((len + 3) >>> 2);
+    for (let i = 0, w = 0; i < len; i += 4, w++) {
+        words[w] = ((u8[i] << 24) | (u8[i + 1] << 16) | (u8[i + 2] << 8) | u8[i + 3]) | 0;
+    }
+    return CryptoJS.lib.WordArray.create(words, len);
+};
+
+const wordArrayToBytes = (wa) => {
+    const { words, sigBytes } = wa;
+    const u8 = new Uint8Array(sigBytes);
+    for (let i = 0; i < sigBytes; i++) {
+        u8[i] = (words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff;
+    }
+    return u8;
+};
+
+// ---------- File payload ----------
+// A locked file is: MAGIC · 2-byte header length · JSON header {n: name, t: type} · bytes.
+// MAGIC starts with NUL, which no typed message can, so unlock can tell files from text.
+const FILE_MAGIC = [0x00, 0x68, 0x75, 0x48, 0x46]; // NUL h u H F
+
+const packFile = (bytes, name, type) => {
+    const header = new TextEncoder().encode(JSON.stringify({ n: name, t: type || '' }));
+    if (header.length > 0xffff) throw new Error('That filename is too long.');
+    const base = FILE_MAGIC.length + 2;
+    const out = new Uint8Array(base + header.length + bytes.length);
+    out.set(FILE_MAGIC, 0);
+    out[FILE_MAGIC.length] = header.length >>> 8;
+    out[FILE_MAGIC.length + 1] = header.length & 0xff;
+    out.set(header, base);
+    out.set(bytes, base + header.length);
+    return out;
+};
+
+// Returns { name, type, bytes } for a file payload, or null for anything else.
+const unpackFile = (u8) => {
+    const base = FILE_MAGIC.length + 2;
+    if (u8.length < base) return null;
+    for (let i = 0; i < FILE_MAGIC.length; i++) {
+        if (u8[i] !== FILE_MAGIC[i]) return null;
+    }
+    const hlen = (u8[FILE_MAGIC.length] << 8) | u8[FILE_MAGIC.length + 1];
+    if (base + hlen > u8.length) return null;
+    let header;
+    try {
+        header = JSON.parse(new TextDecoder().decode(u8.subarray(base, base + hlen)));
+    } catch (_) {
+        return null;
+    }
+    if (!header || typeof header.n !== 'string') return null;
+    return {
+        name: header.n,
+        type: typeof header.t === 'string' ? header.t : '',
+        bytes: u8.subarray(base + hlen),
+    };
+};
+
+// ---------- Attachments ----------
+const detachFile = () => {
+    attached = null;
+    if (attachUrl) { URL.revokeObjectURL(attachUrl); attachUrl = null; }
+    attachThumb.removeAttribute('src');
+    refreshCompose();
+};
+
+// Takes a picked / dropped / pasted file. A .huh (or any text file that is
+// only h, u, H and U) is held as a huH to unlock; anything else is a file to lock.
+const attachFile = async (file) => {
+    if (!file) return;
+    clearError();
+
+    let kind = 'file';
+    let text = null;
+    const maybeHuh = /\.(huh|txt)$/i.test(file.name) || file.type === 'text/plain';
+    if (maybeHuh && file.size <= MAX_HUH_BYTES) {
+        const t = await file.text();
+        if (isHuhText(t)) { kind = 'huh'; text = t.trim(); }
+    }
+    if (kind === 'file' && file.size > MAX_FILE_BYTES) {
+        showError(FACE.grump, 'That file’s a bit much',
+            `Files up to ${fmtSize(MAX_FILE_BYTES)} only. huH makes them five times bigger, so keep it small.`);
+        return;
+    }
+
+    detachFile();
+    attached = { file, kind, text };
+
+    const isImage = /^image\//.test(file.type);
+    if (isImage) {
+        attachUrl = URL.createObjectURL(file);
+        attachThumb.src = attachUrl;
+    }
+    attachThumb.hidden = !isImage;
+    attachGlyph.hidden = isImage;
+    attachGlyphText.hidden = kind !== 'huh';
+    attachGlyphIcon.toggleAttribute('hidden', kind === 'huh');
+    attachName.textContent = file.name;
+    attachMeta.textContent = kind === 'huh'
+        ? `${fmtSize(file.size)} of huH · ready to unlock`
+        : `${fmtSize(file.size)}${file.type ? ' · ' + file.type : ''} · ready to lock`;
+
+    refreshCompose();
+    announce(`Attached ${file.name}`);
+};
+
+// Busy state for file-sized runs: the button says what it's doing and both
+// actions wait. nextPaint() lets that label show before the work starts.
+const setWorking = (btn, text) => {
+    const span = btn.querySelector('span');
+    btn._workingOriginal = span.textContent;
+    span.textContent = text;
+    encryptBtn.disabled = decryptBtn.disabled = true;
+};
+
+const clearWorking = (btn) => {
+    const span = btn.querySelector('span');
+    if (btn._workingOriginal != null) span.textContent = btn._workingOriginal;
+    btn._workingOriginal = null;
+    encryptBtn.disabled = decryptBtn.disabled = false;
+};
+
+const nextPaint = () => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
 
 // ---------- Session (pairing) ----------
 const reset_pqc = () => {
@@ -684,7 +1007,57 @@ modeSessBtn.addEventListener('click', () => setMode('session'));
 encryptBtn.addEventListener('click', encrypt);
 decryptBtn.addEventListener('click', decrypt);
 
-copyBtn.addEventListener('click', () => copyText(result.value, copyBtn));
+copyBtn.addEventListener('click', () => { if (resultText != null) copyText(resultText, copyBtn); });
+saveBtn.addEventListener('click', () => {
+    if (!resultBlob) return;
+    downloadBlob(resultBlob, resultName);
+    flashLabel(saveBtn, 'Saved!');
+    announce(`Saved ${resultName}`);
+});
+
+// Files in: the picker, a drop onto the compose card, or a paste into the message box.
+attachBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => {
+    attachFile(fileInput.files[0]);
+    fileInput.value = '';
+});
+attachRemove.addEventListener('click', () => {
+    detachFile();
+    clearError();
+    textIn.focus();
+});
+textIn.addEventListener('paste', (e) => {
+    const f = e.clipboardData && e.clipboardData.files && e.clipboardData.files[0];
+    if (f) { e.preventDefault(); attachFile(f); }
+});
+
+const dragHasFiles = (e) => !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+let dragDepth = 0; // enter/leave fire for every child, so count them
+composeEl.addEventListener('dragenter', (e) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    dragDepth++;
+    composeEl.classList.add('dragging');
+});
+composeEl.addEventListener('dragover', (e) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+});
+composeEl.addEventListener('dragleave', (e) => {
+    if (!dragHasFiles(e)) return;
+    if (--dragDepth <= 0) { dragDepth = 0; composeEl.classList.remove('dragging'); }
+});
+composeEl.addEventListener('drop', (e) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    dragDepth = 0;
+    composeEl.classList.remove('dragging');
+    attachFile(e.dataTransfer.files[0]);
+});
+// A file dropped anywhere else on the page must not navigate away from the app.
+document.addEventListener('dragover', (e) => { if (dragHasFiles(e)) e.preventDefault(); });
+document.addEventListener('drop', (e) => { if (dragHasFiles(e)) e.preventDefault(); });
 
 copyKeyBtn.addEventListener('click', () => {
     if (!pkR) return;
@@ -698,7 +1071,8 @@ editSessBtn.addEventListener('click', editSession);
 endSessBtn.addEventListener('click', endSession);
 startPairBtn.addEventListener('click', startNewSession);
 
-addEventListener('resize', () => { if (!resultOut.hidden) resizeResult(); });
+addEventListener('resize', () => { if (!resultOut.hidden && !result.hidden) resizeResult(); });
+result.addEventListener('scroll', updateResultFade, { passive: true });
 
 // Click bounce on every button
 document.querySelectorAll('button').forEach(btn => {

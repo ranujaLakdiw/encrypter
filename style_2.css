@@ -167,6 +167,78 @@ button:focus-visible {
     stroke-linejoin: round;
 }
 
+/* ───────── Scrollbars ───────── */
+
+/* Dark wells: the message box and the pairing dialog. The thumb is a slim
+   pill set in from the edge (transparent border + padding-box clip). */
+#text::-webkit-scrollbar,
+.dialog::-webkit-scrollbar {
+    width: 14px;
+    height: 14px;
+}
+
+#text::-webkit-scrollbar-track,
+.dialog::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 10px 0;
+}
+
+#text::-webkit-scrollbar-thumb,
+.dialog::-webkit-scrollbar-thumb {
+    border: 4px solid transparent;
+    border-radius: 999px;
+    background-color: var(--line);
+    background-clip: padding-box;
+}
+
+#text::-webkit-scrollbar-thumb:hover,
+.dialog::-webkit-scrollbar-thumb:hover {
+    background-color: var(--muted);
+}
+
+#text::-webkit-scrollbar-corner,
+.dialog::-webkit-scrollbar-corner,
+#result::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* The white bubble gets a light thumb. */
+#result::-webkit-scrollbar {
+    width: 14px;
+}
+
+#result::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 4px 0;
+}
+
+#result::-webkit-scrollbar-thumb {
+    border: 4px solid transparent;
+    border-radius: 999px;
+    background-color: rgba(17, 18, 20, 0.22);
+    background-clip: padding-box;
+}
+
+#result::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(17, 18, 20, 0.4);
+}
+
+/* Firefox has no ::-webkit-scrollbar, so it gets the standard properties.
+   Chrome drops ::-webkit-scrollbar styling once these are set, hence the guard. */
+@supports not selector(::-webkit-scrollbar) {
+
+    #text,
+    .dialog {
+        scrollbar-width: thin;
+        scrollbar-color: var(--line) transparent;
+    }
+
+    #result {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(17, 18, 20, 0.22) transparent;
+    }
+}
+
 /* ───────── Particles (fixed backdrop) ───────── */
 
 canvas {
@@ -757,6 +829,10 @@ canvas {
     display: flex;
     flex-direction: column;
     gap: 14px;
+    /* A long result stops growing here, so the whole column fits the viewport
+       (header, bubble, tail and actions are about 400px of chrome). */
+    --result-max: max(240px, calc(100vh - 400px));
+    --result-max: max(240px, calc(100dvh - 400px));
 }
 
 .result-head {
@@ -784,10 +860,33 @@ canvas {
 }
 
 .bubble {
+    --bubble-px: 30px;
+    /* Width of the result's scrollbar; set by app_2.js so the fade stops short of it. */
+    --sb: 0px;
+    position: relative;
+    overflow: hidden;
     background: #FFFFFF;
     color: var(--on-accent);
     border-radius: var(--bubble);
-    padding: 26px 30px;
+    padding: 26px var(--bubble-px);
+}
+
+/* Bottom fade over a clamped result; it lifts once the text is scrolled to the end. */
+.bubble::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: calc(var(--bubble-px) + var(--sb));
+    bottom: 0;
+    height: 120px;
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.92) 60%, #FFFFFF 100%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.bubble.clamped:not(.at-end)::after {
+    opacity: 1;
 }
 
 .bubble-tail {
@@ -804,6 +903,7 @@ canvas {
     border: 0;
     resize: none;
     overflow: hidden;
+    max-height: var(--result-max);
     background: transparent;
     color: var(--on-accent);
     font-family: var(--sans);
@@ -820,6 +920,10 @@ canvas {
     font-weight: 400;
     line-height: 1.65;
     word-break: break-all;
+}
+
+.bubble.clamped #result {
+    overflow-y: auto;
 }
 
 #result::selection {
@@ -843,6 +947,10 @@ canvas {
     align-items: center;
     gap: 12px 16px;
     flex-wrap: wrap;
+}
+
+#locked-with + #result-more::before {
+    content: '· ';
 }
 
 .bubble-empty {
@@ -1149,6 +1257,8 @@ body.modal-open {
 
     .result {
         gap: 10px;
+        --result-max: min(60vh, 480px);
+        --result-max: min(60dvh, 480px);
     }
 
     .result-head {
@@ -1164,8 +1274,13 @@ body.modal-open {
         display: inline;
     }
 
+    #locked-with + #result-more::before {
+        content: none;
+    }
+
     .bubble {
-        padding: 20px 22px;
+        --bubble-px: 22px;
+        padding: 20px var(--bubble-px);
     }
 
     .bubble,
@@ -1205,5 +1320,205 @@ body.modal-open {
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
+    }
+}
+
+/* ───────── Files (attach card + file result) ───────── */
+
+.field-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+/* The attached file takes the message box's place (toggled by app_2.js). */
+.attach-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 96px;
+    padding: 14px 14px 14px 16px;
+    border-radius: var(--r-well);
+    border: 1px solid var(--well-border);
+    background: var(--well);
+    animation: huhPop 0.35s var(--ease-pop);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.attach-thumb,
+.attach-glyph {
+    flex: none;
+    width: 60px;
+    height: 60px;
+    border-radius: 14px;
+}
+
+.attach-thumb {
+    display: block;
+    object-fit: cover;
+    background: var(--chip);
+}
+
+.attach-glyph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--chip);
+    color: var(--accent);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.attach-glyph .icon {
+    width: 24px;
+    height: 24px;
+    stroke-width: 1.8;
+}
+
+.attach-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.attach-name {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--fg);
+    overflow-wrap: anywhere;
+}
+
+#attach-remove {
+    flex: none;
+    width: 44px;
+    padding: 0;
+}
+
+#attach-remove .icon {
+    width: 18px;
+    height: 18px;
+}
+
+/* Drop target highlight (class set by app_2.js while a file is dragged over). */
+.compose.dragging #text,
+.compose.dragging .attach-card {
+    border-color: var(--accent);
+    border-style: dashed;
+    box-shadow: 0 0 0 4px rgba(255, 213, 47, 0.18);
+}
+
+/* File result, shown inside the speech bubble in place of the text. */
+.file-card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.file-preview {
+    display: block;
+    max-width: 100%;
+    max-height: 380px;
+    width: auto;
+    height: auto;
+    margin: 0 auto;
+    border-radius: 18px;
+}
+
+.file-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+}
+
+.file-glyph {
+    flex: none;
+    width: 56px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 14px;
+    background: rgba(17, 18, 20, 0.07);
+    color: var(--on-accent);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.file-glyph .icon {
+    width: 24px;
+    height: 24px;
+    stroke-width: 1.8;
+}
+
+.file-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.file-name {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--on-accent);
+    overflow-wrap: anywhere;
+}
+
+.file-size {
+    margin: 0;
+    font-size: 12px;
+    color: rgba(17, 18, 20, 0.6);
+}
+
+.file-sample {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: rgba(17, 18, 20, 0.5);
+    word-break: break-all;
+}
+
+@media (max-width: 600px) {
+    .attach-card {
+        min-height: 84px;
+        padding: 12px;
+        gap: 12px;
+    }
+
+    .attach-thumb,
+    .attach-glyph {
+        width: 52px;
+        height: 52px;
+        border-radius: 12px;
+    }
+
+    .attach-name {
+        font-size: 15px;
+    }
+
+    .file-preview {
+        max-height: 280px;
+        border-radius: 14px;
+    }
+
+    .file-glyph {
+        width: 48px;
+        height: 48px;
+    }
+
+    .file-name {
+        font-size: 17px;
+    }
+
+    .file-sample {
+        display: none;
     }
 }
