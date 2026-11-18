@@ -461,6 +461,18 @@ canvas {
     border-color: var(--line);
 }
 
+/* A field that a browser or password manager has filled in is repainted in the
+   browser's own pale blue (or yellow). Keep it the well it was: the inset shadow
+   covers that colour, which can't be changed any other way. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:autofill {
+    -webkit-text-fill-color: var(--fg);
+    caret-color: var(--fg);
+    box-shadow: 0 0 0 100px var(--well) inset;
+}
+
 .pw-toggle {
     position: absolute;
     top: 5px;
@@ -994,6 +1006,14 @@ canvas {
     display: none;
     flex-direction: column;
     gap: 22px;
+}
+
+/* A click on a dialog's empty space leaves the focus on the dialog itself. It
+   isn't a control, so it wears no ring (the browser's own is a pale blue one
+   right round the card). */
+.dialog:focus,
+.dialog:focus-visible {
+    outline: none;
 }
 
 /* The page stays put while the dialog is open (class set by app_2.js). */

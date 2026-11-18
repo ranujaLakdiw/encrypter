@@ -28,6 +28,8 @@ That builds both. It needs Rust with the `wasm32-unknown-unknown` target, `wasm-
 
 The site is the files `tools/site.sh` gathers into `dist/`: `index.html`, `style_2.css`, `font/`, `img/` and `pkg/`. Nothing is compiled on the host, so a change under `src/` only goes live once `./build.sh` has been run and `pkg/` committed with it.
 
+In `dist/`, the stylesheet, its font and `pkg/` sit inside a folder named after their contents (`v-<digest>/`), and the copy of `index.html` there asks for them in that folder. The page and those files only work as a set, and browsers are told to keep `.css` and `.js` files for hours (Cloudflare's Browser Cache TTL) while `index.html` is always fetched fresh. Under fixed names, a returning visitor got the new page with the old stylesheet and the old WebAssembly loader until that cache ran out: new parts of the page unstyled, and the slow JavaScript build running because the old loader didn't fit the new `.wasm`. With the folder's name changing whenever its contents do, that can't happen. `index.html` in the repository keeps the plain paths, so it still runs as it is from a local server.
+
 On Cloudflare Pages: framework preset None, build command `sh tools/site.sh`, build output directory `dist`.
 
 ## Testing
