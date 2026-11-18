@@ -26,3 +26,9 @@ Thumbs.db
 
 # Local MCP config
 .mcp.json
+
+# Rust build output (the page itself is built into pkg/, which is committed)
+target/
+
+# The gathered site (tools/site.sh), made fresh on every deploy
+dist/

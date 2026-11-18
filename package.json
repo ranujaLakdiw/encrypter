@@ -2,5 +2,8 @@
   "dependencies": {
     "crypto-js": "^4.2.0",
     "mlkem": "^2.3.0"
+  },
+  "devDependencies": {
+    "binaryen": "132.0.0"
   }
 }
