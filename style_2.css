@@ -1718,3 +1718,132 @@ body.modal-open {
         font-size: 17px;
     }
 }
+
+/* ───────── Remembered sessions ───────── */
+
+/* The foot of the session card: remember the session in use, or forget it. */
+.session-keep {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 14px;
+    flex-wrap: wrap;
+    padding-top: 14px;
+    border-top: 1px solid var(--card-border);
+}
+
+.session-keep-text {
+    flex: 1 1 180px;
+    min-width: 0;
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--muted);
+}
+
+.session-keep-text strong {
+    font-weight: 600;
+    color: var(--fg);
+    overflow-wrap: anywhere;
+}
+
+/* What is remembered on this device, above the invitation to pair. */
+.kept {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.kept-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.kept-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 66px;
+    padding: 10px 10px 10px 16px;
+    border-radius: var(--r-well);
+    background: var(--well);
+    border: 1px solid var(--card-border);
+}
+
+.kept-row > .icon {
+    margin-right: 6px;
+    color: var(--accent);
+}
+
+.kept-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.kept-info p {
+    margin: 0;
+}
+
+.kept-nick {
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--fg);
+    overflow-wrap: anywhere;
+}
+
+/* A cross until it is pressed once; then it asks "Forget?". */
+.kept-forget {
+    flex: none;
+    min-width: 44px;
+    padding: 0 12px;
+}
+
+.kept-forget.btn-ghost {
+    padding: 0;
+}
+
+/* The dialog that names and locks a session, or unlocks one. */
+.dialog-form {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+
+.text-input {
+    width: 100%;
+    height: 54px;
+    margin: 0;
+    padding: 0 18px;
+    border-radius: 14px;
+    border: 1px solid var(--well-border);
+    background: var(--well);
+    font-size: 16px;
+    transition: border-color 0.15s ease;
+}
+
+.text-input:hover {
+    border-color: var(--line);
+}
+
+@media (max-width: 600px) {
+
+    /* On a phone the session boxes sit straight on the page, so they take the
+       card's surface (as the session card does). */
+    .kept-row {
+        background: var(--card);
+        padding-left: 14px;
+    }
+
+    .session-keep {
+        padding-top: 12px;
+    }
+}

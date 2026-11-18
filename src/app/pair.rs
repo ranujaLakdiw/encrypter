@@ -5,7 +5,9 @@ use std::{rc::Rc, time::Duration};
 use js_sys::JsString;
 use leptos::{ev, html, prelude::*, task::spawn_local};
 
-use super::{compose::secret_input, dom, face, icon, ErrorBox, Flash, Pairing, Session, Ui};
+use super::{
+    compose::secret_input, dom, face, icon, remember, ErrorBox, Flash, Pairing, Session, Ui,
+};
 use crate::{
     b64, huh,
     kem::{self, KeyPair, Secret},
@@ -96,16 +98,8 @@ impl PairUi {
     }
 
     async fn close(self) {
-        let Some(dialog) = self.dialog.get_untracked() else { return };
-        if !dialog.open() {
-            return;
-        }
-        let _ = dialog.class_list().add_1("closing");
-        dom::sleep(180).await;
-        let _ = dialog.class_list().remove_1("closing");
-        dialog.close();
-        if let Some(body) = document().body() {
-            let _ = body.class_list().remove_1("modal-open");
+        if let Some(dialog) = self.dialog.get_untracked() {
+            dom::close_modal(dialog).await;
         }
     }
 }
@@ -220,10 +214,7 @@ pub fn start_pairing(ui: Ui, is_edit: bool) {
     }
 
     if let Some(dialog) = d.dialog.get_untracked() {
-        let _ = dialog.show_modal();
-    }
-    if let Some(body) = document().body() {
-        let _ = body.class_list().add_1("modal-open");
+        dom::show_modal(&dialog);
     }
     if let Some(copy) = d.copy_pk.get_untracked() {
         let _ = copy.focus();
@@ -268,12 +259,15 @@ fn on_start(ui: Ui) {
             .map(|theirs| kem::combine(&secret, &theirs));
         match combined {
             Some(combined) => {
-                let name = kem::session_name(&combined);
+                // A new key is a new session: whatever the last one was remembered
+                // as stays behind with it.
+                let session = Session::new(&combined, None);
+                let name = session.name.clone();
                 ui.pairing.update_value(|p| {
                     p.other_pk = Some(their_key);
                     p.other_ct = Some(their_reply);
                 });
-                ui.session.set(Some(Session { key: b64::encode(&combined), name: name.clone() }));
+                ui.session.set(Some(session));
                 ui.error.clear();
                 dom::after_render(move || {
                     if let Some(el) = ui.session_name_el.get_untracked() {
@@ -325,11 +319,17 @@ fn end_session(ui: Ui) {
     ui.announce("Session ended");
 }
 
-/// The session card (when paired) and the invitation to pair (when not).
+/// The session card (when there is a session), and otherwise the remembered
+/// sessions to open and the invitation to pair.
 #[component]
 pub fn SessionPanel(ui: Ui) -> impl IntoView {
     let d = ui.pair;
     let paired = move || ui.session.with(|s| s.is_some());
+    // Opened from the remembered ones: there is no keypair to copy from or edit.
+    let restored = move || ui.session.with(|s| s.as_ref().is_some_and(|s| s.restored));
+    let session_text = move |f: fn(&Session) -> &str| {
+        ui.session.with(|s| s.as_ref().map(f).unwrap_or("—").to_owned())
+    };
 
     let copy_key = move |ev: ev::MouseEvent| {
         if let Some(key) = public_key(ui) {
@@ -348,24 +348,35 @@ pub fn SessionPanel(ui: Ui) -> impl IntoView {
                 <div class="session-name">
                     <span class="dot" aria-hidden="true"></span>
                     <span id="session-name" class="mono" tabindex="-1" node_ref=ui.session_name_el>
-                        {move || ui.session.with(|s| s.as_ref().map(|s| s.name.clone()).unwrap_or_else(|| "—".to_owned()))}
+                        {move || session_text(Session::title)}
                     </span>
                 </div>
-                <span class="meta mono">"paired"<span class="label-long">" · ML-KEM-1024"</span></span>
+                <span id="session-meta" class="meta mono">
+                    {move || if restored() { session_text(|s| &s.name) } else { "paired".to_owned() }}
+                    <span class="label-long">{move || if restored() { " · remembered" } else { " · ML-KEM-1024" }}</span>
+                </span>
             </div>
-            <p class="note">"You should both see this exact name. If theirs is different, edit the session."</p>
+            <p id="session-note" class="note">
+                {move || {
+                    if restored() {
+                        "Opened from this device. Ending the session locks it away again."
+                    } else {
+                        "You should both see this exact name. If theirs is different, edit the session."
+                    }
+                }}
+            </p>
             <div class="session-actions">
-                <button type="button" id="copy-key" class="btn btn-soft" aria-label="Copy my key" on:click=copy_key>
+                <button type="button" id="copy-key" class="btn btn-soft" aria-label="Copy my key" hidden=restored on:click=copy_key>
                     {icon("copy")}
                     <span class="label-long">{d.key_flash.or("Copy my key")}</span>
                     <span class="label-short">{d.key_flash.or("Key")}</span>
                 </button>
-                <button type="button" id="copy-reply" class="btn btn-soft" aria-label="Copy my reply" on:click=copy_reply>
+                <button type="button" id="copy-reply" class="btn btn-soft" aria-label="Copy my reply" hidden=restored on:click=copy_reply>
                     {icon("copy")}
                     <span class="label-long">{d.reply_flash.or("Copy my reply")}</span>
                     <span class="label-short">{d.reply_flash.or("Reply")}</span>
                 </button>
-                <button type="button" id="edit-session" class="btn btn-soft" on:click=move |_| start_pairing(ui, true)>
+                <button type="button" id="edit-session" class="btn btn-soft" hidden=restored on:click=move |_| start_pairing(ui, true)>
                     <span>"Edit"</span>
                 </button>
                 <button type="button" id="end-session" class="btn btn-danger" aria-label="End session" on:click=move |_| end_session(ui)>
@@ -373,7 +384,9 @@ pub fn SessionPanel(ui: Ui) -> impl IntoView {
                     <span class="label-short">"End"</span>
                 </button>
             </div>
+            <remember::KeepRow ui/>
         </div>
+        <remember::KeptList ui/>
         <div id="session-off" class="session-empty" hidden=paired>
             <p class="session-empty-title">"Not paired yet"</p>
             <p class="note">

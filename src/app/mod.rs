@@ -6,6 +6,7 @@
 mod compose;
 mod dom;
 mod pair;
+mod remember;
 mod result;
 
 use std::{rc::Rc, time::Duration};
@@ -15,7 +16,10 @@ use leptos::{html, prelude::*, task::spawn_local};
 use wasm_bindgen::{prelude::*, JsCast};
 use web_sys::{Blob, Element, HtmlElement};
 
-use crate::kem::{KeyPair, Secret};
+use crate::{
+    b64,
+    kem::{self, KeyPair, Secret},
+};
 
 /// huH is 5.25× the size of what goes in, and the whole run happens in memory on
 /// the page's own thread, so files are capped where it still feels snappy.
@@ -82,11 +86,43 @@ pub struct Attached {
     pub thumb: Option<String>,
 }
 
-/// A paired session: the AES key (base64 of the combined secrets) and its name.
+/// The session in use: the AES key (base64 of the combined secrets) and what it goes by.
 #[derive(Clone)]
 pub struct Session {
     pub key: String,
+    /// The name both people see (amber-arc-07), worked out from the key.
     pub name: String,
+    /// The nickname it is remembered under on this device, if it is.
+    pub nick: Option<String>,
+    /// Opened from the remembered ones rather than paired just now, so there is
+    /// no keypair behind it: nothing to copy, nothing to edit.
+    pub restored: bool,
+}
+
+impl Session {
+    /// The session a secret makes: just paired, or just opened again as `nick`.
+    pub fn new(secret: &Secret, nick: Option<String>) -> Self {
+        Self {
+            key: b64::encode(secret),
+            name: kem::session_name(secret),
+            restored: nick.is_some(),
+            nick,
+        }
+    }
+
+    /// What it is called on screen. Fresh from pairing that is the name both
+    /// people compare; opened again later, it is the nickname it was given.
+    pub fn title(&self) -> &str {
+        match &self.nick {
+            Some(nick) if self.restored => nick,
+            _ => &self.name,
+        }
+    }
+
+    /// The secret behind the key.
+    pub fn secret(&self) -> Option<Secret> {
+        b64::decode(&self.key)?.try_into().ok()
+    }
 }
 
 /// Both parties run the same flow: each generates a keypair, exchanges public
@@ -246,6 +282,7 @@ pub struct Ui {
     pub start_pairing_btn: NodeRef<html::Button>,
     pub sr: NodeRef<html::Div>,
     pub pair: pair::PairUi,
+    pub keep: remember::KeepUi,
 }
 
 impl Ui {
@@ -268,6 +305,7 @@ impl Ui {
             start_pairing_btn: NodeRef::new(),
             sr: NodeRef::new(),
             pair: pair::PairUi::new(),
+            keep: remember::KeepUi::new(),
         }
     }
 
@@ -300,7 +338,7 @@ impl Ui {
     /// "with a password" or "in <session name>", for the mode in use right now.
     pub fn via(self) -> String {
         match (self.mode.get_untracked(), self.session.get_untracked()) {
-            (Mode::Session, Some(session)) => format!("in {}", session.name),
+            (Mode::Session, Some(session)) => format!("in {}", session.title()),
             _ => "with a password".to_owned(),
         }
     }
@@ -378,6 +416,7 @@ const SPRITE: &str = concat!(
     r##"<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11"></path><path d="M7.5 10.5 12 15l4.5-4.5"></path><path d="M5 19.5h14"></path></symbol>"##,
     r##"<symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12"></path><path d="M18 6 6 18"></path></symbol>"##,
     r##"<symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3.5h7l5 5V20a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20V5A1.5 1.5 0 0 1 7 3.5z"></path><path d="M14 3.5V9h5"></path></symbol>"##,
+    r##"<symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M7.5 3.5h9A1.5 1.5 0 0 1 18 5v15.5l-6-4-6 4V5a1.5 1.5 0 0 1 1.5-1.5z"></path></symbol>"##,
     "</defs>",
 );
 
@@ -444,6 +483,7 @@ fn start_particles() {
 #[component]
 fn App() -> impl IntoView {
     let ui = Ui::new();
+    remember::start(ui);
 
     // Click bounce on every button.
     dom::on_document("click", |ev| {
@@ -490,6 +530,7 @@ fn App() -> impl IntoView {
         </div>
 
         <pair::PairDialog ui/>
+        <remember::KeepDialog ui/>
 
         <div id="sr-status" class="sr-only" role="status" aria-live="polite" node_ref=ui.sr></div>
     }

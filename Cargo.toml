@@ -10,8 +10,10 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 aes = "0.9"
+aes-gcm = { version = "0.11", default-features = false, features = ["aes", "alloc", "zeroize"] }
 cbc = "0.2"
 md-5 = "0.11"
+pbkdf2 = { version = "0.13", default-features = false, features = ["sha2"] }
 base64 = "0.23"
 crc32fast = "1"
 lzma-rust2 = { version = "0.25", default-features = false, features = ["std", "encoder", "optimization"] }
@@ -26,11 +28,12 @@ wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 console_error_panic_hook = "0.1"
 web-sys = { version = "0.3", features = [
-    "Blob", "BlobPropertyBag", "ClipboardEvent", "Crypto", "CssStyleDeclaration", "DataTransfer",
+    "Blob", "BlobPropertyBag", "ClipboardEvent", "Crypto", "CryptoKey", "CssStyleDeclaration", "DataTransfer",
     "Document", "DomTokenList", "DragEvent", "Element", "Event", "EventTarget", "File", "FileList",
     "FocusOptions", "HtmlButtonElement", "HtmlDialogElement", "HtmlDivElement", "HtmlDocument",
     "HtmlElement", "HtmlImageElement", "HtmlInputElement", "HtmlParagraphElement", "HtmlSpanElement",
-    "HtmlTextAreaElement", "MediaQueryList", "MouseEvent", "Navigator", "Node", "Url", "Window",
+    "HtmlTextAreaElement", "MediaQueryList", "MouseEvent", "Navigator", "Node", "Storage",
+    "SubmitEvent", "SubtleCrypto", "Url", "Window",
 ] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

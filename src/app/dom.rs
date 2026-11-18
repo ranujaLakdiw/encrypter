@@ -9,7 +9,7 @@ use leptos::{
 };
 use wasm_bindgen::{prelude::*, JsCast};
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{Blob, BlobPropertyBag, Element, FocusOptions, HtmlElement, Url};
+use web_sys::{Blob, BlobPropertyBag, Element, FocusOptions, HtmlDialogElement, HtmlElement, Url};
 
 /// Focuses without scrolling the page to the element.
 pub fn focus(el: &HtmlElement) {
@@ -95,6 +95,81 @@ pub fn on_document(event: &str, f: impl FnMut(web_sys::Event) + 'static) {
     let closure = Closure::<dyn FnMut(web_sys::Event)>::new(f);
     let _ = document().add_event_listener_with_callback(event, closure.as_ref().unchecked_ref());
     closure.forget();
+}
+
+/// A listener on `window` that lives as long as the page.
+pub fn on_window(event: &str, f: impl FnMut(web_sys::Event) + 'static) {
+    let closure = Closure::<dyn FnMut(web_sys::Event)>::new(f);
+    let _ = window().add_event_listener_with_callback(event, closure.as_ref().unchecked_ref());
+    closure.forget();
+}
+
+/// Opens a `<dialog>` over the page, which stays put behind it.
+pub fn show_modal(dialog: &HtmlDialogElement) {
+    let _ = dialog.show_modal();
+    if let Some(body) = document().body() {
+        let _ = body.class_list().add_1("modal-open");
+    }
+}
+
+/// Closes a dialog, letting its closing animation play first.
+pub async fn close_modal(dialog: HtmlDialogElement) {
+    if !dialog.open() {
+        return;
+    }
+    let _ = dialog.class_list().add_1("closing");
+    sleep(180).await;
+    let _ = dialog.class_list().remove_1("closing");
+    dialog.close();
+    if let Some(body) = document().body() {
+        let _ = body.class_list().remove_1("modal-open");
+    }
+}
+
+/// This browser's storage for the page, where it lets the page have any (a
+/// private window or a strict setting may not).
+fn storage() -> Option<web_sys::Storage> {
+    window().local_storage().ok().flatten()
+}
+
+/// What is stored under `key`, if anything is.
+pub fn stored(key: &str) -> Option<String> {
+    storage()?.get_item(key).ok().flatten()
+}
+
+/// Stores `value` under `key`. Says whether the browser took it.
+pub fn store(key: &str, value: &str) -> bool {
+    storage().is_some_and(|s| s.set_item(key, value).is_ok())
+}
+
+/// PBKDF2-HMAC-SHA256 by the browser's own crypto: 32 bytes of key, worked out
+/// natively and off the page's thread. `None` where the page isn't offered
+/// `crypto.subtle` (browsers keep it to https and localhost) or it won't do it.
+pub async fn pbkdf2(pass: &str, salt: &[u8], rounds: u32) -> Option<[u8; 32]> {
+    let crypto = window().crypto().ok()?;
+    let subtle = Reflect::get(&crypto, &JsValue::from_str("subtle")).ok()?;
+    if subtle.is_undefined() || subtle.is_null() {
+        return None;
+    }
+    let subtle: web_sys::SubtleCrypto = subtle.unchecked_into();
+
+    let usages = Array::of1(&JsValue::from_str("deriveBits"));
+    let imported = subtle
+        .import_key_with_str("raw", &Uint8Array::from(pass.as_bytes()), "PBKDF2", false, &usages)
+        .ok()?;
+    let base: web_sys::CryptoKey = JsFuture::from(imported).await.ok()?.unchecked_into();
+
+    let how = js_sys::Object::new();
+    for (name, value) in [
+        ("name", JsValue::from_str("PBKDF2")),
+        ("hash", JsValue::from_str("SHA-256")),
+        ("salt", Uint8Array::from(salt).into()),
+        ("iterations", JsValue::from_f64(f64::from(rounds))),
+    ] {
+        Reflect::set(&how, &JsValue::from_str(name), &value).ok()?;
+    }
+    let bits = JsFuture::from(subtle.derive_bits_with_object(&how, &base, 256).ok()?).await.ok()?;
+    Uint8Array::new(&bits).to_vec().try_into().ok()
 }
 
 /// An element's `value`, as the JavaScript string it is (no conversion, no loss).
