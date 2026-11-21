@@ -6,33 +6,97 @@ use web_sys::{HtmlDivElement, HtmlTextAreaElement};
 
 use super::{dom, fmt_size, icon, sprite, Body, Shown, Ui};
 
-/// Shared plumbing for every new result.
-fn begin(ui: Ui, shown: Shown) {
+/// Lets go of what the last result held on to.
+fn let_go(ui: Ui) {
     if let Some(url) = ui.preview_url.get_value() {
         dom::revoke_url(&url);
     }
+    ui.preview_url.set_value(None);
+    ui.copy_flash.cancel();
+    ui.save_flash.cancel();
+}
+
+/// Shared plumbing for every new result.
+fn begin(ui: Ui, shown: Shown) {
+    let_go(ui);
     ui.preview_url.set_value(match &shown.body {
         Body::File { preview, .. } => preview.clone(),
         _ => None,
     });
-    ui.copy_flash.cancel();
-    ui.save_flash.cancel();
     ui.error.clear();
     ui.result.set(Some(shown));
 }
 
+/// Takes the last result off the page. For when something was asked for and
+/// didn't come off: what was there before would look like its outcome (a huH
+/// that didn't open under the last thing that did; a new message under the last
+/// huH, ready to copy).
+pub fn clear(ui: Ui) {
+    let_go(ui);
+    ui.result.set(None);
+}
+
+/// What an old huH was locked with. It decides what there is to say about it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Old {
+    Password,
+    Session,
+}
+
+impl Old {
+    /// What comes with the result of an old huH. The old envelope had no check
+    /// on it, so nothing would have noticed a change made on the way; and its
+    /// password took one round of MD5 to try, so every old huH still around is
+    /// a quick way to find the password it was locked with.
+    fn note(self) -> &'static str {
+        match self {
+            Old::Password => {
+                "This huH was locked the old way. Nothing checked it for changes on its way, and old huHs make their password quick to guess: use a new password for anything new."
+            }
+            Old::Session => "This huH was locked the old way. Nothing checked it for changes on its way.",
+        }
+    }
+}
+
+/// How a result came about.
+pub struct How {
+    /// What it was locked or unlocked with: "with a password", "in amber-arc-07".
+    /// Taken when the button was pressed (`Ui::via`), since the mode or the
+    /// session can be changed while the work is still going on.
+    pub via: String,
+    /// Set when it came out of a huH in the old envelope.
+    pub old: Option<Old>,
+}
+
+impl How {
+    fn label(&self) -> String {
+        match self.old {
+            Some(_) => format!("{} · old huH, unchecked", self.via),
+            None => self.via.clone(),
+        }
+    }
+
+    fn note(&self) -> Option<&'static str> {
+        self.old.map(Old::note)
+    }
+}
+
 /// huH or unlocked text, in the bubble.
-pub fn show_text(ui: Ui, value: &str, locked: bool) {
+pub fn show_text(ui: Ui, value: &str, locked: bool, how: How) {
     let text = JsString::from(value);
     let chars = text.length();
     let meta = if locked { format!("{chars} chars of huh") } else { format!("{chars} chars") };
     // The steps were read out as they went; say how it ended too.
-    ui.announce(if locked { "Locked and ready to send" } else { "Unlocked" });
-    begin(ui, Shown { locked, via: ui.via(), meta, body: Body::Text { text, huh: locked } });
+    ui.announce(match (locked, how.note()) {
+        (true, _) => "Locked and ready to send".to_owned(),
+        (false, None) => "Unlocked".to_owned(),
+        (false, Some(note)) => format!("Unlocked. {note}"),
+    });
+    begin(ui, Shown { locked, via: how.label(), meta, note: how.note(), body: Body::Text { text, huh: locked } });
 }
 
 /// A file locked into huH: offer it as a .huh to save (or copy, for small ones).
-pub fn show_huh_file(ui: Ui, huh: &str, name: String) {
+pub fn show_huh_file(ui: Ui, huh: &str, name: String, via: String) {
     let size = format!("{} of huH", fmt_size(huh.len() as f64));
     let sample = match huh.get(..120) {
         Some(head) if huh.len() > 120 => format!("{head}…"),
@@ -45,28 +109,43 @@ pub fn show_huh_file(ui: Ui, huh: &str, name: String) {
         ui,
         Shown {
             locked: true,
-            via: ui.via(),
+            via,
             meta: size.clone(),
+            note: None,
             body: Body::HuhFile { text, blob, name, size, sample },
         },
     );
 }
 
+/// The picture types the page shows a preview of, and hands back as what they
+/// say they are. Everything else is handed back as plain bytes to save.
+const PICTURES: [&str; 6] = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/bmp"];
+
 /// A huH that unlocked into a file: rebuild it and offer it back.
-pub fn show_unlocked_file(ui: Ui, name: &str, mime: &str, bytes: &[u8]) {
+///
+/// The file's type is whatever the person who locked it said it was, so it is
+/// not taken at its word. Only plain pictures are previewed and given their own
+/// type. Anything else (a web page, an SVG, which is a document that can carry
+/// script) becomes a download of bytes that the browser has no reason to open
+/// as a page of this site. The type is still shown, as text.
+pub fn show_unlocked_file(ui: Ui, name: &str, mime: &str, bytes: &[u8], how: How) {
     let name = if name.is_empty() { "file".to_owned() } else { name.replace(['/', '\\'], "_") };
     let mime = if mime.is_empty() { "application/octet-stream" } else { mime };
-    let is_image = mime.starts_with("image/");
+    let is_image = PICTURES.contains(&mime);
     let size = format!("{} · {mime}", fmt_size(bytes.len() as f64));
-    let blob = dom::blob_from_bytes(bytes, mime);
+    let blob = dom::blob_from_bytes(bytes, if is_image { mime } else { "application/octet-stream" });
     let preview = if is_image { blob.as_ref().and_then(dom::object_url) } else { None };
-    ui.announce(format!("Unlocked {name}"));
+    ui.announce(match how.note() {
+        Some(note) => format!("Unlocked {name}. {note}"),
+        None => format!("Unlocked {name}"),
+    });
     begin(
         ui,
         Shown {
             locked: false,
-            via: ui.via(),
+            via: how.label(),
             meta: size.clone(),
+            note: how.note(),
             body: Body::File { blob, name, size, preview, is_image },
         },
     );
@@ -116,6 +195,7 @@ pub fn ResultPane(ui: Ui) -> impl IntoView {
     let file_text = move |f: fn(&Body) -> Option<&String>| {
         ui.result.with(|r| r.as_ref().and_then(|s| f(&s.body)).cloned().unwrap_or_default())
     };
+    let note = move || ui.result.with(|r| r.as_ref().and_then(|shown| shown.note));
     // While something is being locked or unlocked, the steps take the result's place.
     let working = move || ui.job.get().is_some();
     let locking = move || ui.job.get().is_none_or(|step| step.locking());
@@ -328,6 +408,10 @@ pub fn ResultPane(ui: Ui) -> impl IntoView {
                         "copy grabs all of it"
                     </span>
                 </div>
+                // What there is to know about an old huH, under what it unlocked to.
+                <p id="result-note" class="note result-note" hidden=move || note().is_none()>
+                    {move || note().unwrap_or_default()}
+                </p>
             </div>
 
             <div id="result-empty" class="bubble-empty" hidden=move || working() || ui.result.with(|r| r.is_some())>

@@ -23,10 +23,8 @@ use aes_gcm::{
     aead::{Aead, KeyInit, Payload},
     Aes256Gcm,
 };
-use pbkdf2::{pbkdf2_hmac_array, sha2::Sha256};
-
 use crate::{
-    b64,
+    b64, kdf,
     kem::{Secret, SECRET_LEN},
     rng,
 };
@@ -96,7 +94,7 @@ impl Recipe {
 /// Stretches a passphrase into the key: PBKDF2-HMAC-SHA256, 32 bytes out. The
 /// browser's `crypto.subtle` computes the same thing, and faster.
 pub fn stretch(pass: &str, recipe: &Recipe) -> Key {
-    pbkdf2_hmac_array::<Sha256, 32>(pass.as_bytes(), &recipe.salt, recipe.rounds)
+    kdf::pbkdf2(pass, &recipe.salt, recipe.rounds)
 }
 
 /// Takes a sealed session apart: its recipe, its head, its nonce and what is locked.

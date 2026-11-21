@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use js_sys::{JsString, Object, Reflect};
+use js_sys::{Object, Reflect};
 use leptos::{ev, html, prelude::*, task::spawn_local};
 use wasm_bindgen::JsValue;
 
@@ -90,6 +90,21 @@ impl KeepUi {
         self.clear_fields();
         self.error.clear();
     }
+
+    fn is_open(self) -> bool {
+        self.dialog.get_untracked().is_some_and(|dialog| dialog.open())
+    }
+
+    /// The dialog has closed, by this page's doing or by the browser's own (a
+    /// second Escape closes one whatever the page said about the first, even
+    /// in the middle of stretching a passphrase). Either way the page behind
+    /// it moves again and no passphrase is left sitting in its fields; work
+    /// that was under way sees the dialog gone and stops.
+    fn closed(self) {
+        dom::modal_closed();
+        self.clear_fields();
+        self.error.clear();
+    }
 }
 
 fn read() -> Vec<Kept> {
@@ -131,13 +146,9 @@ fn focus_input(node: NodeRef<html::Input>) {
 }
 
 /// What a passphrase field holds, as the same bytes however the keyboard put
-/// its accents together (an "é" can arrive as one character or as two).
+/// its accents together.
 fn passphrase(node: NodeRef<html::Input>) -> String {
-    let typed = node.get_untracked().map(|input| input.value()).unwrap_or_default();
-    JsString::from(typed.as_str())
-        .normalize("NFC")
-        .as_string()
-        .unwrap_or(typed)
+    dom::nfc(&node.get_untracked().map(|input| input.value()).unwrap_or_default())
 }
 
 fn show(ui: Ui, doing: Doing) {
@@ -175,23 +186,15 @@ fn submit(ui: Ui) {
     }
 }
 
-/// Stretches a passphrase into the key its recipe makes. The browser's own
-/// crypto does the sum where the page has it; otherwise this program does the
-/// same one itself, which holds the page still while it runs.
+/// Stretches a passphrase into the key its recipe makes.
 async fn stretch(pass: &str, recipe: &Recipe) -> Key {
-    match dom::pbkdf2(pass, &recipe.salt, recipe.rounds).await {
-        Some(key) => key,
-        None => {
-            dom::next_paint().await;
-            keep::stretch(pass, recipe)
-        }
-    }
+    dom::stretch(pass, &recipe.salt, recipe.rounds).await
 }
 
 /// Seals the session in use under the passphrase and files it under the nickname.
 async fn save(ui: Ui) {
     let k = ui.keep;
-    let Some(secret) = ui.session.with_untracked(|s| s.as_ref().and_then(Session::secret)) else {
+    let Some(secret) = ui.session.with_untracked(|s| s.as_ref().map(|session| session.secret)) else {
         k.error.show(face::DEAD, "Something went wrong", "There’s no session here to remember.");
         return;
     };
@@ -243,8 +246,11 @@ async fn save(ui: Ui) {
     k.busy.set(true);
     let recipe = Recipe::fresh();
     let key = stretch(&pass, &recipe).await;
-    let sealed = keep::seal(&secret, &nick, &recipe, &key);
     k.busy.set(false);
+    if !k.is_open() {
+        return; // closed while the passphrase was being stretched: nobody is asking any more
+    }
+    let sealed = keep::seal(&secret, &nick, &recipe, &key);
 
     // Read afresh: another tab may have saved or forgotten one in the meantime.
     let mut list = read();
@@ -304,9 +310,20 @@ async fn open(ui: Ui, nick: String) {
     k.error.clear();
     k.busy.set(true);
     let key = stretch(&pass, &recipe).await;
-    let opened = keep::open(&kept.sealed, &kept.nick, &key);
     k.busy.set(false);
+    if !k.is_open() {
+        return; // closed while the passphrase was being stretched: the session stays shut
+    }
+    let opened = keep::open(&kept.sealed, &kept.nick, &key);
     match opened {
+        // The first version of pairing, handed back its own two codes, made a
+        // session whose key was all zeros: one that anybody could read. Nothing
+        // makes such a session any more, but one may have been remembered.
+        Ok(secret) if secret == [0; crate::kem::SECRET_LEN] => k.error.show(
+            face::DEAD,
+            "This session isn’t safe",
+            "It was paired with its own codes, so anyone could read it. Forget it and pair again.",
+        ),
         Ok(secret) => {
             k.close().await;
             // Nothing of an earlier pairing belongs to this session.
@@ -530,6 +547,7 @@ pub fn KeepDialog(ui: Ui) -> impl IntoView {
             aria-describedby="keep-desc"
             node_ref=k.dialog
             on:cancel=on_esc
+            on:close=move |_| k.closed()
         >
             <form class="dialog-form" novalidate on:submit=on_submit>
                 <div class="dialog-head">

@@ -19,11 +19,18 @@ window.HuhCompare = (() => {
     };
 
     // Animations are frozen mid-flight in a background tab (and would smear any
-    // measurement anyway), so they are switched off while measuring.
+    // measurement anyway), so they are switched off while measuring. The rule
+    // goes into one of the page's own stylesheets: the page's content policy
+    // turns away a <style> element made here, as it would anybody's.
     const holdStill = () => {
-        const style = document.createElement('style');
-        style.textContent = '*, *::before, *::after { animation: none !important; transition: none !important; }';
-        document.head.appendChild(style);
+        const own = [...document.styleSheets].find((sheet) => {
+            try {
+                return sheet.href && sheet.href.startsWith(location.origin) && sheet.cssRules;
+            } catch (_) {
+                return false; // another site's stylesheet: its rules can't be read
+            }
+        });
+        own.insertRule('*, *::before, *::after { animation: none !important; transition: none !important; }', own.cssRules.length);
     };
 
     // Capture what "Copy" buttons copy instead of touching the real clipboard.

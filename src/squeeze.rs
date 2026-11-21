@@ -19,20 +19,21 @@
 //! two-word note) is stored the way it always was.
 //!
 //! Every form comes back whole or not at all. Long is checked against its length
-//! and a checksum. The short forms carry no checksum, and inside the AES envelope
-//! they don't need one: a compressed chunk only decodes if the range coder ends
-//! exactly on its last byte with nothing left over, and AES-CBC never hands over
-//! a payload with just a bit or two changed. Damage to a huH scrambles a whole
-//! 16-byte block of what comes out (or the padding, or the marker), and the range
-//! coder cannot ride that out. A lone flipped bit in the first few coded bytes
-//! would slip through, because those are coded at even odds; it has no way to
-//! arrive here on its own.
+//! and a checksum. The short forms carry no checksum, and don't need one. Inside
+//! today's envelope nothing altered gets this far in the first place: AES-GCM
+//! turns away a huH with a single bit changed. Inside the old one (AES-CBC, with
+//! no such check) damage still never arrives as a bit or two: it scrambles a
+//! whole 16-byte block of what comes out (or the padding, or the marker), and a
+//! compressed chunk only decodes if the range coder ends exactly on its last
+//! byte with nothing left over, which it cannot do across a scrambled block. A
+//! lone flipped bit in the first few coded bytes would slip through, because
+//! those are coded at even odds; it has no way to arrive here on its own.
 
 use std::io::{Read, Write};
 
 use lzma_rust2::{EncodeMode, Lzma2Options, Lzma2Reader, Lzma2Writer, LzmaOptions, MfType};
 
-use crate::{cipher, words::WORDS};
+use crate::{envelope::padded, words::WORDS};
 
 const NUL: u8 = 0x00;
 const LONG: u8 = b'L';
@@ -282,7 +283,8 @@ fn wrap(raw: &[u8]) -> Vec<u8> {
 
 /// Returns the payload to encrypt: squeezed if that makes the huH shorter, else as given.
 ///
-/// AES pads to whole 16-byte blocks, so only a whole block saved counts.
+/// The envelope pads to whole 16-byte steps (so that a huH's length says little
+/// about what is in it), so only a whole step saved makes the huH any shorter.
 pub fn squeeze(raw: Vec<u8>) -> Result<Vec<u8>, SqueezeError> {
     // A payload that happens to open with a marker has to be wrapped, or unlock would misread it.
     let clash = is_squeezed(&raw);
@@ -290,13 +292,13 @@ pub fn squeeze(raw: Vec<u8>) -> Result<Vec<u8>, SqueezeError> {
         return if clash { Err(SqueezeError::Unwrappable) } else { Ok(raw) };
     }
     if !clash {
-        // Under one block there is nothing to save, and packed data isn't worth the grind.
-        if cipher::blocks(raw.len()) == 1 || (raw.len() > PROBE_ABOVE && looks_packed_already(&raw)) {
+        // Under one step there is nothing to save, and packed data isn't worth the grind.
+        if padded(raw.len()) == padded(0) || (raw.len() > PROBE_ABOVE && looks_packed_already(&raw)) {
             return Ok(raw);
         }
     }
     let packed = wrap(&raw);
-    if !clash && cipher::blocks(packed.len()) >= cipher::blocks(raw.len()) {
+    if !clash && padded(packed.len()) >= padded(raw.len()) {
         return Ok(raw);
     }
     Ok(packed)
@@ -345,7 +347,7 @@ mod tests {
             return None;
         }
         assert_eq!(unsqueeze(&s).unwrap(), raw);
-        assert!(cipher::blocks(s.len()) < cipher::blocks(raw.len()) || is_squeezed(raw));
+        assert!(padded(s.len()) < padded(raw.len()) || is_squeezed(raw));
         Some(s[1])
     }
 

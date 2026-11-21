@@ -16,10 +16,7 @@ use leptos::{html, prelude::*, task::spawn_local};
 use wasm_bindgen::{prelude::*, JsCast};
 use web_sys::{Blob, Element, HtmlElement};
 
-use crate::{
-    b64,
-    kem::{self, KeyPair, Secret},
-};
+use crate::kem::{self, KeyPair, Secret};
 
 /// huH is 5.25× the size of what goes in, and the whole run happens in memory on
 /// the page's own thread, so files are capped where it still feels snappy.
@@ -86,12 +83,16 @@ pub struct Attached {
     pub thumb: Option<String>,
 }
 
-/// The session in use: the AES key (base64 of the combined secrets) and what it goes by.
+/// The session in use: its secret and what it goes by.
 #[derive(Clone)]
 pub struct Session {
-    pub key: String,
-    /// The name both people see (amber-arc-07), worked out from the key.
+    /// What both people hold and nobody else does. Every huH locked in the
+    /// session gets a key of its own made from it.
+    pub secret: Secret,
+    /// The name both people see (amber-arc-07), cut from the secret.
     pub name: String,
+    /// The number the two of them compare to be sure nobody is in the middle.
+    pub check: String,
     /// The nickname it is remembered under on this device, if it is.
     pub nick: Option<String>,
     /// Opened from the remembered ones rather than paired just now, so there is
@@ -103,8 +104,9 @@ impl Session {
     /// The session a secret makes: just paired, or just opened again as `nick`.
     pub fn new(secret: &Secret, nick: Option<String>) -> Self {
         Self {
-            key: b64::encode(secret),
+            secret: *secret,
             name: kem::session_name(secret),
+            check: kem::check_number(secret),
             restored: nick.is_some(),
             nick,
         }
@@ -118,25 +120,30 @@ impl Session {
             _ => &self.name,
         }
     }
-
-    /// The secret behind the key.
-    pub fn secret(&self) -> Option<Secret> {
-        b64::decode(&self.key)?.try_into().ok()
-    }
 }
 
 /// Both parties run the same flow: each generates a keypair, exchanges public
 /// keys, encapsulates the other's key to get (my reply, my secret), then
-/// decapsulates the other's reply. The final key is the XOR of the two secrets.
+/// decapsulates the other's reply. The session's secret is hashed out of both
+/// secrets and all four codes (see `kem`).
 #[derive(Default)]
 pub struct Pairing {
     pub keypair: Option<Rc<KeyPair>>,
-    /// What I send back after encapsulating their key.
-    pub my_reply: Option<Rc<Vec<u8>>>,
-    pub my_secret: Option<Secret>,
+    /// My answer to the last of their keys that got one.
+    pub answer: Option<Rc<Answer>>,
     /// Remembered for "edit session".
     pub other_pk: Option<String>,
     pub other_ct: Option<String>,
+}
+
+/// My answer to one of their keys: the reply to send back, and the secret that
+/// went into it. One is made for a key and kept, because the other person may
+/// already hold the reply: a second answer to the same key would not match it.
+pub struct Answer {
+    /// The key it answers, as it was pasted.
+    pub their_key: String,
+    pub reply: Vec<u8>,
+    pub secret: Secret,
 }
 
 /// What the result bubble is showing.
@@ -146,6 +153,9 @@ pub struct Shown {
     /// "with a password" / "in amber-arc-07"
     pub via: String,
     pub meta: String,
+    /// Something the person should know about this result, shown under it
+    /// (what it means that a huH was an old one).
+    pub note: Option<&'static str>,
     pub body: Body,
 }
 
@@ -420,7 +430,8 @@ const SPRITE: &str = concat!(
     "</defs>",
 );
 
-/// The constellation behind the page, drawn by particles.js (loaded by index.html).
+/// The constellation behind the page, drawn by particles.js (which index.html
+/// loads from this site's own js/ folder).
 const PARTICLES: &str = r##"{
   "particles": {
     "number": { "value": 50, "density": { "enable": true, "value_area": 1000 } },
@@ -511,7 +522,7 @@ fn App() -> impl IntoView {
     });
 
     view! {
-        <svg aria-hidden="true" width="0" height="0" style="position:absolute" inner_html=SPRITE></svg>
+        <svg aria-hidden="true" width="0" height="0" class="sprite" inner_html=SPRITE></svg>
         <div id="particles-js" aria-hidden="true"></div>
 
         <div class="page">

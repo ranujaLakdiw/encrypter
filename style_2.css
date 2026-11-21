@@ -2,7 +2,8 @@
    Huh encrypter · direction A (dark, Huh-forward)
    ────────────────────────────────────────────────────────────── */
 
-/* Offline fallback for the mono face; Google Fonts supplies 500/600. */
+/* The mono face's regular weight. font/fonts.css (loaded before this) has its
+   500 and 600, and Archivo; this rule comes after those, so it is the one used. */
 @font-face {
     font-family: 'IBM Plex Mono';
     font-weight: 400;
@@ -1145,6 +1146,12 @@ body.modal-open {
     pointer-events: none;
 }
 
+/* The icon sprite: in the page for its <symbol>s, taking up no room. (A class
+   and not a style attribute, which the page's content policy doesn't allow.) */
+.sprite {
+    position: absolute;
+}
+
 /* ───────── Responsive ───────── */
 
 @media (max-width: 600px) {
@@ -1865,5 +1872,58 @@ body.modal-open {
 
     .session-keep {
         padding-top: 12px;
+    }
+}
+
+/* ───────── Checking a session ───────── */
+
+/* The number two people read to each other to be sure nobody swapped their
+   codes on the way: eight groups of five digits, four to a row. */
+.session-check {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 14px;
+    border-top: 1px solid var(--card-border);
+}
+
+.session-check-number {
+    display: grid;
+    grid-template-columns: repeat(4, max-content);
+    gap: 2px 18px;
+    margin: 0;
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 1.5;
+    letter-spacing: 0.06em;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
+}
+
+/* The same digits again, spelt out one at a time for a screen reader. Selecting
+   the number to copy it must not pick these up as well. */
+.session-check-number .sr-only {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* ───────── Old huHs ───────── */
+
+/* What there is to know about a huH from before they were checked, under what
+   it unlocked to. */
+.result-note {
+    max-width: 56ch;
+}
+
+@media (max-width: 600px) {
+    .session-check {
+        padding-top: 12px;
+    }
+
+    /* Four groups still have to fit across the narrowest phone. */
+    .session-check-number {
+        gap: 2px 12px;
+        font-size: 16px;
+        letter-spacing: 0.04em;
     }
 }

@@ -6,21 +6,23 @@ use js_sys::JsString;
 use leptos::{ev, html, prelude::*, task::spawn_local};
 
 use super::{
-    compose::secret_input, dom, face, icon, remember, ErrorBox, Flash, Pairing, Session, Ui,
+    compose::secret_input, dom, face, icon, remember, Answer, ErrorBox, Flash, Pairing, Session, Ui,
 };
 use crate::{
     b64, huh,
-    kem::{self, KeyPair, Secret},
+    kem::{self, KeyPair, PairError},
 };
+
+/// What the line beside "Copy my reply" says while the reply is being made.
+const GENERATING: &str = "Generating…";
 
 /// What the open dialog needs to remember.
 #[derive(Default)]
 struct DialogState {
     open: bool,
     is_edit: bool,
-    /// The reply and secret from before the dialog opened, to put back on cancel or failure.
-    orig_reply: Option<Rc<Vec<u8>>>,
-    orig_secret: Option<Secret>,
+    /// My answer from before the dialog opened, to put back on cancel.
+    orig_answer: Option<Rc<Answer>>,
     timer: Option<TimeoutHandle>,
     /// Bumped whenever their key changes or the dialog closes, so a reply still
     /// being made for an earlier key is dropped.
@@ -111,19 +113,20 @@ fn public_key(ui: Ui) -> Option<JsString> {
 
 fn my_reply(ui: Ui) -> Option<JsString> {
     ui.pairing
-        .with_value(|p| p.my_reply.as_ref().map(|r| JsString::from(b64::encode(r))))
+        .with_value(|p| p.answer.as_ref().map(|a| JsString::from(b64::encode(&a.reply))))
 }
 
-/// Makes the reply whenever the other person's key changes. Any reply made for an
-/// earlier key is void the moment the key changes, so Pair's "Not ready yet" guard
-/// holds until the new one is ready.
+/// Sees to my reply whenever the "their key" box changes.
+///
+/// A reply is made once for a key and then kept. The other person may already
+/// be holding it, and a second reply to the same key would be a different one:
+/// the two of them would end up in sessions that don't match. So a key pasted
+/// again, or put back as it was after a slip of the keyboard, gets the reply it
+/// already has. Only a different key gets a new one, and until that is ready
+/// Pair's "Not ready yet" guard holds.
 fn on_their_key(ui: Ui) {
     let d = ui.pair;
     d.error.clear();
-    ui.pairing.update_value(|p| {
-        p.my_reply = None;
-        p.my_secret = None;
-    });
     let mine = d
         .state
         .try_update_value(|s| {
@@ -140,22 +143,32 @@ fn on_their_key(ui: Ui) {
         d.disable_reply("Needs their key first");
         return;
     }
-    d.disable_reply("Generating…");
+    if ui.pairing.with_value(|p| p.answer.as_ref().is_some_and(|a| a.their_key == their_key)) {
+        d.enable_reply();
+        return;
+    }
+    d.disable_reply(GENERATING);
     let timer = set_timeout_with_handle(
         move || {
             if d.state.with_value(|s| s.generation != mine) {
                 return; // superseded meanwhile
             }
-            let made = b64::decode(&their_key).and_then(|pk| kem::encapsulate(&pk).ok());
+            // Their key must be somebody else's. Pairing with a copy of your own
+            // codes is a session with nobody in it.
+            let own = |key: &[u8]| {
+                ui.pairing.with_value(|p| p.keypair.as_ref().is_some_and(|pair| pair.is_mine(key)))
+            };
+            let made = match b64::decode(&their_key) {
+                Some(key) if own(&key) => Err("That’s your own key"),
+                Some(key) => kem::encapsulate(&key).map_err(|_| "That key doesn’t look right"),
+                None => Err("That key doesn’t look right"),
+            };
             match made {
-                Some((reply, secret)) => {
-                    ui.pairing.update_value(|p| {
-                        p.my_reply = Some(Rc::new(reply));
-                        p.my_secret = Some(secret);
-                    });
+                Ok((reply, secret)) => {
+                    ui.pairing.update_value(|p| p.answer = Some(Rc::new(Answer { their_key, reply, secret })));
                     d.enable_reply();
                 }
-                None => d.disable_reply("That key doesn’t look right"),
+                Err(why) => d.disable_reply(why),
             }
         },
         Duration::from_millis(400),
@@ -170,8 +183,7 @@ pub fn start_pairing(ui: Ui, is_edit: bool) {
     let d = ui.pair;
     if !is_edit {
         ui.pairing.update_value(|p| {
-            p.my_reply = None;
-            p.my_secret = None;
+            p.answer = None;
             p.keypair = Some(Rc::new(KeyPair::generate()));
         });
     }
@@ -183,9 +195,8 @@ pub fn start_pairing(ui: Ui, is_edit: bool) {
     d.ct_shown.set(false);
 
     // Pre-fill the two codes when editing.
-    let (stored_pk, stored_ct, reply, secret) = ui.pairing.with_value(|p| {
-        (p.other_pk.clone(), p.other_ct.clone(), p.my_reply.clone(), p.my_secret)
-    });
+    let (stored_pk, stored_ct, answer) =
+        ui.pairing.with_value(|p| (p.other_pk.clone(), p.other_ct.clone(), p.answer.clone()));
     let prefill = |node: NodeRef<html::Input>, stored: &Option<String>| {
         if let Some(input) = node.get_untracked() {
             input.set_value(if is_edit { stored.as_deref().unwrap_or("") } else { "" });
@@ -197,21 +208,11 @@ pub fn start_pairing(ui: Ui, is_edit: bool) {
     d.state.update_value(|s| {
         s.open = true;
         s.is_edit = is_edit;
-        s.orig_reply = reply.clone();
-        s.orig_secret = secret;
-        s.generation += 1;
+        s.orig_answer = answer;
     });
-
-    // Restore the saved reply if editing with one; otherwise it needs their key.
-    if is_edit && reply.is_some() {
-        d.enable_reply();
-    } else {
-        d.disable_reply("Needs their key first");
-    }
-    // If editing with a stored key but no reply yet, make it now.
-    if is_edit && stored_pk.is_some_and(|pk| !pk.is_empty()) && reply.is_none() {
-        on_their_key(ui);
-    }
+    // Whatever is in the "their key" box now, say where my reply to it stands:
+    // nothing to reply to yet, the reply it already has, or one to be made.
+    on_their_key(ui);
 
     if let Some(dialog) = d.dialog.get_untracked() {
         dom::show_modal(&dialog);
@@ -239,54 +240,96 @@ fn on_start(ui: Ui) {
         }
         return;
     }
-    let (keypair, secret) = ui.pairing.with_value(|p| (p.keypair.clone(), p.my_secret));
-    let ready = ui.pairing.with_value(|p| p.my_reply.is_some());
-    let (Some(keypair), Some(secret), true) = (keypair, secret, ready) else {
-        d.error.show(
-            face::WAVE,
-            "Not ready yet",
-            "Your reply is still generating. Give it a moment after pasting their key.",
-        );
+    // My answer has to be the one made for the key that is in the box now.
+    let (keypair, answer) = ui.pairing.with_value(|p| {
+        (p.keypair.clone(), p.answer.clone().filter(|a| a.their_key == their_key))
+    });
+    let (Some(keypair), Some(answer)) = (keypair, answer) else {
+        // Nothing is on its way if the key was refused; the line by "Copy my
+        // reply" already says why.
+        if d.ct_status.get_untracked() == GENERATING {
+            d.error.show(
+                face::WAVE,
+                "Not ready yet",
+                "Your reply is still generating. Give it a moment after pasting their key.",
+            );
+        } else {
+            d.error.show(
+                face::HUH,
+                "Their key isn’t right",
+                "Paste the key the other person sent you, the whole of it.",
+            );
+            if let Some(input) = d.other_pk.get_untracked() {
+                let _ = input.focus();
+            }
+        }
         return;
+    };
+
+    // The session is worked out while the dialog is still open, so that a wrong
+    // code can be put right there and then. Closing on a mistake would throw
+    // the whole exchange away: the next attempt starts with a new key of mine,
+    // and the one already sent is no use to anybody.
+    let paired = b64::decode(&their_key)
+        .zip(b64::decode(&their_reply))
+        .ok_or(PairError::BadCode)
+        .and_then(|(key, reply)| keypair.pair(&key, &answer.reply, &answer.secret, &reply));
+    let combined = match paired {
+        Ok(combined) => combined,
+        Err(wrong) => {
+            let (field, title, body) = match wrong {
+                PairError::OwnKey => (
+                    d.other_pk,
+                    "That’s your own key",
+                    "Paste the key the other person sent you, not the one you copied here.",
+                ),
+                PairError::OwnReply => (
+                    d.other_ct,
+                    "That’s your own reply",
+                    "Paste the reply the other person sent you, not the one you copied here.",
+                ),
+                PairError::KeyForReply => (
+                    d.other_ct,
+                    "That’s a key, not a reply",
+                    "Their reply is the second code they sent you. Paste that one here.",
+                ),
+                PairError::BadCode => (
+                    d.other_ct,
+                    "That reply isn’t right",
+                    "Paste the reply the other person sent you, the whole of it.",
+                ),
+            };
+            d.error.show(face::HUH, title, body);
+            if let Some(input) = field.get_untracked() {
+                let _ = input.focus();
+            }
+            return;
+        }
     };
 
     d.cleanup();
     spawn_local(async move {
         d.close().await;
-        // XOR is commutative: both parties arrive at the same combined key.
-        let combined = b64::decode(&their_reply)
-            .and_then(|reply| keypair.decapsulate(&reply).ok())
-            .map(|theirs| kem::combine(&secret, &theirs));
-        match combined {
-            Some(combined) => {
-                // A new key is a new session: whatever the last one was remembered
-                // as stays behind with it.
-                let session = Session::new(&combined, None);
-                let name = session.name.clone();
-                ui.pairing.update_value(|p| {
-                    p.other_pk = Some(their_key);
-                    p.other_ct = Some(their_reply);
-                });
-                ui.session.set(Some(session));
-                ui.error.clear();
-                dom::after_render(move || {
-                    if let Some(el) = ui.session_name_el.get_untracked() {
-                        dom::focus(&el);
-                    }
-                });
-                ui.announce(format!("Paired as {name}"));
-            }
-            None => {
-                // Leave whatever was paired before exactly as it was.
-                let (reply, secret) =
-                    d.state.with_value(|s| (s.orig_reply.clone(), s.orig_secret));
-                ui.pairing.update_value(|p| {
-                    p.my_reply = reply;
-                    p.my_secret = secret;
-                });
-                ui.error.show(face::DEAD, "Pairing failed", "Check the codes and try again.");
-            }
+        ui.pairing.update_value(|p| {
+            p.other_pk = Some(their_key);
+            p.other_ct = Some(their_reply);
+        });
+        // Updated with the very codes it was paired with, a session is the same
+        // session, and keeps what it is remembered as. Any other outcome is a new
+        // key and so a new session: whatever the last one was remembered as stays
+        // behind with it.
+        let unchanged = ui.session.with_untracked(|s| s.as_ref().is_some_and(|s| s.secret == combined));
+        if !unchanged {
+            ui.session.set(Some(Session::new(&combined, None)));
         }
+        let name = kem::session_name(&combined);
+        ui.error.clear();
+        dom::after_render(move || {
+            if let Some(el) = ui.session_name_el.get_untracked() {
+                dom::focus(&el);
+            }
+        });
+        ui.announce(format!("Paired as {name}. Compare the check number to be sure of it."));
     });
 }
 
@@ -295,14 +338,10 @@ fn on_cancel(ui: Ui) {
     if !d.state.with_value(|s| s.open) {
         return;
     }
-    // Restore the reply if the user changed the key field then cancelled; a fresh
-    // attempt leaves nothing behind.
-    let (is_edit, reply, secret) =
-        d.state.with_value(|s| (s.is_edit, s.orig_reply.clone(), s.orig_secret));
-    ui.pairing.update_value(|p| {
-        p.my_reply = if is_edit { reply } else { None };
-        p.my_secret = if is_edit { secret } else { None };
-    });
+    // Put back the answer the session was paired with, in case another key was
+    // tried in the box and answered; a fresh attempt leaves nothing behind.
+    let (is_edit, answer) = d.state.with_value(|s| (s.is_edit, s.orig_answer.clone()));
+    ui.pairing.update_value(|p| p.answer = if is_edit { answer } else { None });
     d.cleanup();
     spawn_local(d.close());
 }
@@ -329,6 +368,23 @@ pub fn SessionPanel(ui: Ui) -> impl IntoView {
     let restored = move || ui.session.with(|s| s.as_ref().is_some_and(|s| s.restored));
     let session_text = move |f: fn(&Session) -> &str| {
         ui.session.with(|s| s.as_ref().map(f).unwrap_or("—").to_owned())
+    };
+
+    // The check number, a group at a time for the eye, and a digit at a time for
+    // a screen reader (which would otherwise read out eight five-figure sums).
+    let check = move || ui.session.with(|s| s.as_ref().map(|s| s.check.clone()).unwrap_or_default());
+    let check_groups = move || {
+        check()
+            .split(' ')
+            .map(|group| view! { <span aria-hidden="true">{group.to_owned()}</span> })
+            .collect_view()
+    };
+    let check_spoken = move || {
+        check()
+            .split(' ')
+            .map(|group| group.chars().map(String::from).collect::<Vec<_>>().join(" "))
+            .collect::<Vec<_>>()
+            .join(", ")
     };
 
     let copy_key = move |ev: ev::MouseEvent| {
@@ -361,10 +417,22 @@ pub fn SessionPanel(ui: Ui) -> impl IntoView {
                     if restored() {
                         "Opened from this device. Ending the session locks it away again."
                     } else {
-                        "You should both see this exact name. If theirs is different, edit the session."
+                        "You should both see this exact name. If theirs is different, edit the session. The name only catches a slip; the check number is the proof."
                     }
                 }}
             </p>
+            // Swapping codes can't tell whose codes arrived. Two people who read
+            // each other the same number are in the same session, with nobody between.
+            <div id="session-check" class="session-check">
+                <p class="eyebrow">"Check number"</p>
+                <p id="session-check-number" class="session-check-number mono">
+                    <span class="sr-only">{check_spoken}</span>
+                    {check_groups}
+                </p>
+                <p class="note">
+                    "Compare all of it on a call or in person, not in the chat the codes went through. The same number on both sides means nobody is in the middle."
+                </p>
+            </div>
             <div class="session-actions">
                 <button type="button" id="copy-key" class="btn btn-soft" aria-label="Copy my key" hidden=restored on:click=copy_key>
                     {icon("copy")}

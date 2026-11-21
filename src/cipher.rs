@@ -1,8 +1,17 @@
-//! AES exactly as the page has always done it, so every huH made before still opens.
+//! The old envelope: AES as the page did it until `envelope` took over, kept so
+//! that every huH made before still opens. Nothing is sealed this way any more.
 //!
-//! That is the OpenSSL "Salted__" layout CryptoJS writes for a passphrase:
+//! It is the OpenSSL "Salted__" layout CryptoJS writes for a passphrase:
 //! `"Salted__" · 8-byte salt · AES-256-CBC(PKCS#7)`, with the key and IV stretched
 //! from passphrase + salt by one round of MD5 (`EVP_BytesToKey`).
+//!
+//! Two things about it are why it was replaced, and are still true of every old
+//! huH. One round of MD5 is no work at all, so a password can be guessed at tens
+//! of millions of tries a second. And nothing checks the result: change a huH on
+//! its way and, as long as the padding still comes out right, it opens as
+//! something else without a word. (Flip a bit of one 16-byte block and the same
+//! bit of the next block's plaintext flips, at the cost of scrambling the
+//! first.) An old huH still says what it says; it just can't vouch for it.
 
 use aes::cipher::{block_padding::Pkcs7, BlockModeDecrypt, BlockModeEncrypt, KeyIvInit};
 use md5::{Digest, Md5};
@@ -14,11 +23,6 @@ const HEADER: &[u8; 8] = b"Salted__";
 const SALT: usize = 8;
 const BLOCK: usize = 16;
 const PREFIX: usize = HEADER.len() + SALT;
-
-/// How many AES blocks a payload of `n` bytes takes once padded.
-pub fn blocks(n: usize) -> usize {
-    n / BLOCK + 1
-}
 
 fn derive(pass: &[u8], salt: &[u8]) -> ([u8; 32], [u8; 16]) {
     let mut material = [0u8; 48];
@@ -41,7 +45,8 @@ fn derive(pass: &[u8], salt: &[u8]) -> ([u8; 32], [u8; 16]) {
     (key, iv)
 }
 
-/// Encrypts `plain` under the passphrase with the given salt.
+/// Encrypts `plain` under the passphrase with the given salt. (Only the tests
+/// seal anything this way now, to have old huHs to open.)
 pub fn seal_with_salt(plain: &[u8], pass: &[u8], salt: [u8; SALT]) -> Vec<u8> {
     let (key, iv) = derive(pass, &salt);
     let mut out = Vec::with_capacity(PREFIX + (plain.len() / BLOCK + 1) * BLOCK);
@@ -93,7 +98,8 @@ mod tests {
         for len in [0usize, 1, 15, 16, 17, 1000] {
             let plain: Vec<u8> = (0..len).map(|i| i as u8).collect();
             let sealed = seal(&plain, b"pw");
-            assert_eq!(sealed.len(), PREFIX + blocks(len) * BLOCK);
+            // Padded up to the next whole block, and a whole block more if it was one already.
+            assert_eq!(sealed.len(), PREFIX + (len / BLOCK + 1) * BLOCK);
             assert_eq!(open(&sealed, b"pw").unwrap(), plain);
             assert!(open(&sealed, b"pW").map_or(true, |p| p != plain));
         }

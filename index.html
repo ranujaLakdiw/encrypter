@@ -3,13 +3,20 @@
 
 <head>
     <meta charset="UTF-8">
+    <!--
+        What this page is allowed to load and run: files from this site itself,
+        and WebAssembly. No inline script or style, nothing from anyone else's
+        server, and nowhere to send anything. It comes first so that it covers
+        everything after it. tools/site.sh sends the same policy as a response
+        header too (where it can also forbid putting the page in a frame).
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+    <meta name="referrer" content="no-referrer">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="dark">
     <title>Huh encrypter</title>
     <meta name="description" content="Lock messages into huH with a shared password or a post-quantum session. ML-KEM-1024 + AES-256, entirely in your browser.">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+    <link rel="stylesheet" href="./font/fonts.css" type="text/css">
     <link rel="stylesheet" href="./style_2.css" type="text/css">
     <link rel="icon" type="image/png" href="./img/logo.png" />
 </head>
@@ -18,57 +25,13 @@
 
     <!--
         The page is a Rust app (src/, built into ./pkg with build.sh): it writes all the
-        markup here and runs the crypto. particles.js only draws the backdrop.
+        markup here and runs the crypto. js/boot.js starts it; js/particles.min.js only
+        draws the backdrop. Every file is served from this site.
     -->
     <noscript>Huh encrypter needs JavaScript switched on.</noscript>
 
-    <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
-    <script type="module">
-        // The app runs as WebAssembly where the browser can do that, and as the very
-        // same program translated to plain JavaScript (./pkg/fallback) where it can't:
-        // WebAssembly switched off (iOS Lockdown Mode, some locked-down setups) or a
-        // browser too old for the module.
-        const canRunWebAssembly = () => {
-            try {
-                // Where WebAssembly is blocked by policy the object is still there and
-                // compiling is what throws, so try it on the empty module.
-                const empty = new WebAssembly.Module(Uint8Array.of(0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00));
-                return new WebAssembly.Instance(empty) instanceof WebAssembly.Instance;
-            } catch (_) {
-                return false;
-            }
-        };
-
-        // Importing the JavaScript build is what starts it.
-        const startAsJavaScript = () => import('./pkg/fallback/huh_encrypter.js');
-
-        // Adding "?js" to the address runs the JavaScript build anywhere, to try it out.
-        const askedForJavaScript = new URLSearchParams(location.search).has('js');
-
-        if (!askedForJavaScript && canRunWebAssembly()) {
-            // Fetch the module while its loader is being fetched.
-            const hint = document.createElement('link');
-            hint.rel = 'preload';
-            hint.as = 'fetch';
-            hint.type = 'application/wasm';
-            hint.crossOrigin = 'anonymous';
-            hint.href = './pkg/huh_encrypter_bg.wasm';
-            document.head.append(hint);
-
-            import('./pkg/huh_encrypter.js')
-                .then(({ default: start }) => start())
-                .catch((error) => {
-                    // A browser that refuses the module does so before any of the app
-                    // has run, so the JavaScript build can still take over cleanly.
-                    if (error instanceof WebAssembly.CompileError || error instanceof WebAssembly.LinkError) {
-                        return startAsJavaScript();
-                    }
-                    throw error;
-                });
-        } else {
-            startAsJavaScript();
-        }
-    </script>
+    <script src="./js/particles.min.js"></script>
+    <script type="module" src="./js/boot.js"></script>
 
 </body>
 

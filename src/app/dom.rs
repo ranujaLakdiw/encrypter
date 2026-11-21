@@ -112,18 +112,26 @@ pub fn show_modal(dialog: &HtmlDialogElement) {
     }
 }
 
+/// Lets the page behind a dialog move again. For every way a dialog comes to
+/// close: by this page, or by the browser on its own account (a second Escape
+/// closes a dialog whatever the page said about the first).
+pub fn modal_closed() {
+    if let Some(body) = document().body() {
+        let _ = body.class_list().remove_1("modal-open");
+    }
+}
+
 /// Closes a dialog, letting its closing animation play first.
 pub async fn close_modal(dialog: HtmlDialogElement) {
     if !dialog.open() {
+        modal_closed();
         return;
     }
     let _ = dialog.class_list().add_1("closing");
     sleep(180).await;
     let _ = dialog.class_list().remove_1("closing");
     dialog.close();
-    if let Some(body) = document().body() {
-        let _ = body.class_list().remove_1("modal-open");
-    }
+    modal_closed();
 }
 
 /// This browser's storage for the page, where it lets the page have any (a
@@ -170,6 +178,26 @@ pub async fn pbkdf2(pass: &str, salt: &[u8], rounds: u32) -> Option<[u8; 32]> {
     }
     let bits = JsFuture::from(subtle.derive_bits_with_object(&how, &base, 256).ok()?).await.ok()?;
     Uint8Array::new(&bits).to_vec().try_into().ok()
+}
+
+/// Stretches a password or passphrase into a key: PBKDF2-HMAC-SHA256, which is
+/// slow on purpose. The browser's own crypto does the sum where the page has it;
+/// otherwise this program does the very same one itself, which holds the page
+/// still while it runs.
+pub async fn stretch(pass: &str, salt: &[u8], rounds: u32) -> [u8; 32] {
+    match pbkdf2(pass, salt, rounds).await {
+        Some(key) => key,
+        None => {
+            next_paint().await;
+            crate::kdf::pbkdf2(pass, salt, rounds)
+        }
+    }
+}
+
+/// Text as the same bytes however the keyboard put its accents together (an "é"
+/// can arrive as one character or as two).
+pub fn nfc(text: &str) -> String {
+    JsString::from(text).normalize("NFC").as_string().unwrap_or_else(|| text.to_owned())
 }
 
 /// An element's `value`, as the JavaScript string it is (no conversion, no loss).
